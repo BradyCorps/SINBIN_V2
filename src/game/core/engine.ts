@@ -20,6 +20,9 @@ const PRESSURE_GAIN_PER_SECOND = 3;
 const SUBSTITUTION_PRESSURE = 4;
 const DANGER_WINDOW_MS = 600;
 const REENTRY_LOCK_MS = 2_000;
+const GOAL_CHANCE_SCALE = 6_800;
+const MINIMUM_GOAL_CHANCE = 5;
+const MAXIMUM_GOAL_CHANCE = 95;
 
 const PHASE_QUALITY: Record<PlayPhase, number> = {
   "loose-puck": 0.2,
@@ -86,6 +89,9 @@ function assertValidState(state: GameState): void {
   if (state.pressure < 0 || state.pressure > 100) {
     throw new Error("Pressure must remain between 0 and 100.");
   }
+  if (state.teamGoals < 0 || state.opponentGoals < 0) {
+    throw new Error("Goals cannot be negative.");
+  }
   for (const id of roster) {
     const runtime = state.players[id];
     const definition = playerDefinition(id);
@@ -115,14 +121,15 @@ export function createInitialGame(): GameState {
     },
     pressure: 0,
     momentum: 0,
-    bankedMomentum: 0,
-    goalieDefence: 600,
-    periodTarget: 10_000,
+    teamGoals: 0,
+    opponentGoals: 0,
+    goalieComposure: 600,
     shiftNumber: 1,
     maximumShifts: 5,
     status: "playing",
     lastShiftOutcome: null,
-    lastBankedAmount: 0,
+    lastShot: null,
+    rngState: 0x51b1,
     dangerRemainingMs: null,
     elapsedMs: 0,
     eventSequence: 0,
@@ -336,8 +343,8 @@ function resolveOnIceSynergy(state: GameState): void {
 }
 
 function applyTurnover(state: GameState, message: string): void {
-  state.lastShiftOutcome = "turnover";
-  state.lastBankedAmount = 0;
+  state.lastShiftOutcome = "conceded";
+  state.opponentGoals += 1;
   state.momentum = 0;
   state.status =
     state.shiftNumber >= state.maximumShifts ? "period-complete" : "turnover";
@@ -350,7 +357,7 @@ function checkFailure(state: GameState): void {
     state.pressure = 100;
     applyTurnover(
       state,
-      "Turnover: opponent Pressure reached 100. Unbanked Momentum was lost.",
+      "Goal against: opponent Pressure reached 100 and the defence broke down.",
     );
   }
 }
@@ -486,43 +493,73 @@ function advanceClock(state: GameState, elapsedMs: number): GameState {
 
 export function previewShot(state: GameState): ShotPreview {
   const quality = PHASE_QUALITY[state.puck.phase];
-  const grossChance = Math.round(state.momentum * quality);
-  const banked = Math.max(0, grossChance - state.goalieDefence);
+  const shotQuality = Math.round(state.momentum * quality);
+  const netQuality = Math.max(0, shotQuality - state.goalieComposure);
+  const chancePercent = roundEngineValue(
+    clamp(
+      (netQuality / GOAL_CHANCE_SCALE) * 100,
+      MINIMUM_GOAL_CHANCE,
+      MAXIMUM_GOAL_CHANCE,
+    ),
+  );
   return {
     quality,
-    grossChance,
-    goalieDefence: state.goalieDefence,
-    banked,
-    formula: `${state.momentum.toLocaleString()} × ${quality.toFixed(2)} − ${state.goalieDefence.toLocaleString()} = ${banked.toLocaleString()}`,
+    shotQuality,
+    goalieComposure: state.goalieComposure,
+    chancePercent,
+    factors: [
+      `${state.puck.phase.replaceAll("-", " ")} quality ${Math.round(quality * 100)}%`,
+      `goalie composure −${state.goalieComposure.toLocaleString()}`,
+    ],
+    formula: `${state.momentum.toLocaleString()} × ${quality.toFixed(2)} − ${state.goalieComposure.toLocaleString()} → ${chancePercent.toFixed(1)}% goal chance`,
   };
+}
+
+function roll(state: GameState): number {
+  state.rngState = (Math.imul(state.rngState, 1_664_525) + 1_013_904_223) >>> 0;
+  return roundEngineValue((state.rngState / 0x1_0000_0000) * 100);
 }
 
 function shoot(state: GameState): GameState {
   const next = cloneState(state);
   const preview = previewShot(next);
-  next.bankedMomentum += preview.banked;
-  next.lastBankedAmount = preview.banked;
-  next.lastShiftOutcome = "banked";
+  const rollPercent = roll(next);
+  const goal = rollPercent < preview.chancePercent;
+  if (goal) next.teamGoals += 1;
+  next.lastShot = {
+    goal,
+    chancePercent: preview.chancePercent,
+    rollPercent,
+    shotQuality: preview.shotQuality,
+    goalieComposure: preview.goalieComposure,
+  };
+  next.lastShiftOutcome = goal ? "goal" : "save";
   next.momentum = 0;
   next.status =
-    next.shiftNumber >= next.maximumShifts ? "period-complete" : "banked";
+    next.shiftNumber >= next.maximumShifts
+      ? "period-complete"
+      : "shot-resolved";
   next.dangerRemainingMs = null;
   appendEvent(
     next,
     "SHOT",
-    `Shot banked ${preview.banked.toLocaleString()} Momentum (${preview.formula}).`,
+    goal
+      ? `GOAL: ${preview.chancePercent.toFixed(1)}% chance beat the goalie (roll ${rollPercent.toFixed(1)}).`
+      : `SAVE: ${preview.chancePercent.toFixed(1)}% chance was stopped (roll ${rollPercent.toFixed(1)}).`,
   );
   assertValidState(next);
   return next;
 }
 
 function nextShift(state: GameState): GameState {
-  if (state.status !== "banked" && state.status !== "turnover") return state;
+  if (state.status !== "shot-resolved" && state.status !== "turnover") {
+    return state;
+  }
   const next = cloneState(state);
   next.shiftNumber += 1;
   next.status = "playing";
   next.lastShiftOutcome = null;
-  next.lastBankedAmount = 0;
+  next.lastShot = null;
   next.pressure = 0;
   next.momentum = 0;
   next.puck = {
@@ -562,7 +599,10 @@ export function reduceGame(state: GameState, action: GameAction): GameState {
   }
 }
 
-export function periodResult(state: GameState): "win" | "loss" | "in-progress" {
+export function periodResult(
+  state: GameState,
+): "win" | "loss" | "draw" | "in-progress" {
   if (state.status !== "period-complete") return "in-progress";
-  return state.bankedMomentum >= state.periodTarget ? "win" : "loss";
+  if (state.teamGoals === state.opponentGoals) return "draw";
+  return state.teamGoals > state.opponentGoals ? "win" : "loss";
 }

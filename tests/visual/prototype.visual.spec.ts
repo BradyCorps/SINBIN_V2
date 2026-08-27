@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 const VIEWPORTS = [
+  { name: "desktop", width: 1366, height: 768 },
   { name: "compact", width: 667, height: 375 },
   { name: "reference", width: 844, height: 390 },
   { name: "large", width: 915, height: 412 },
@@ -27,13 +28,13 @@ for (const viewport of VIEWPORTS) {
     }));
     expect(overflow).toEqual({ horizontal: false, vertical: false });
 
-    await expect(page.locator(".active-player")).toHaveCount(3);
+    await expect(page.locator(".line-player")).toHaveCount(3);
     await expect(page.locator(".bench-player")).toHaveCount(3);
     await expect(page.getByRole("button", { name: /shoot/i })).toBeVisible();
-    await expect(page.getByText("KNOWN GOALIE")).toBeVisible();
+    await expect(page.getByText("GOALIE COMPOSURE")).toBeVisible();
 
     const activeBoxes = await page
-      .locator(".active-player")
+      .locator(".line-player")
       .evaluateAll((cards) =>
         cards.map((card) => {
           const rect = card.getBoundingClientRect();
@@ -75,5 +76,5 @@ test("substitution and shoot are playable through tap controls", async ({
   );
 
   await page.getByRole("button", { name: /shoot/i }).click();
-  await expect(page.getByText(/SHOT BANKED/)).toBeVisible();
+  await expect(page.getByText(/GOAL|SAVE/)).toBeVisible();
 });

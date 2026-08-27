@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-export const STAGE_WIDTH = 844;
-export const STAGE_HEIGHT = 390;
+export const STAGE_WIDTH = 1366;
+export const STAGE_HEIGHT = 768;
 
 export function StageScaler({
   children,

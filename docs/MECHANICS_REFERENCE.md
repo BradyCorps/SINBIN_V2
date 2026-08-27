@@ -1,14 +1,16 @@
 # Mechanics Reference
 
-**Status:** Draft tuning values, not final balance.
+**Status:** V0.2 foundation. Tuning values are intentionally provisional.
 
 ## Shift shape
 
 - Six players: three active and three on the bench.
 - Active slots: Recover, Create, and Finish.
 - Five shifts form one period test.
-- The opponent target is 10,000 banked Momentum.
-- The known goalie defence is 600.
+- The player and opponent each have a visible goal total. There is no arbitrary
+  Momentum target.
+- The opponent owns visible goalie composure and defensive structure. The first
+  V0.2 rectangle slice exposes goalie composure; opponent archetypes follow.
 
 ## Play progression
 
@@ -42,13 +44,16 @@ that setup shot-ready.
 - Pressure reaching 100 causes an immediate turnover.
 - A removed player has a 2,000 ms re-entry lock.
 
-## SHOOT
+## SHOOT and goals
 
-The shot is deterministic and its complete formula is shown to the player.
+Momentum never becomes the score directly. It produces a transparent chance to
+score a goal. The shot result uses seeded randomness: repeating the same actions
+from the same initial state produces the same result.
 
 ```text
-gross chance = round(unbanked Momentum × play-state quality)
-banked result = max(0, gross chance − known goalie defence)
+shot quality = round(unbanked Momentum × play-state quality)
+goal chance = clamp((shot quality − goalie composure) / chance scale, 5%, 95%)
+goal if seeded shot roll < goal chance
 ```
 
 | Play state    | Quality |
@@ -59,6 +64,28 @@ banked result = max(0, gross chance − known goalie defence)
 | Scoring setup |    0.82 |
 | Shot ready    |    1.00 |
 
-Shooting or turning over ends the current shift. Only a successful cash-out adds
-to the period total. The next shift begins with the same six-player arrangement
-and refreshed prototype Stamina.
+The UI shows the chance, the factors that created it, and the result explanation.
+A save is an understandable hockey result, not a hidden score penalty.
+
+Shooting ends the current shift. A pressure collapse concedes a goal against and
+ends the current shift. The next shift begins with the same six-player
+arrangement and refreshed prototype Stamina.
+
+## Coach Mode
+
+Coach Mode will use a finite decision economy rather than a manual clock. Each
+decision point presents a hockey situation—loose puck, forecheck, controlled
+entry, scoring setup, or threatened player—and the opponent answers meaningful
+actions. It shares puck state, roles, substitutions, sticks, shot calculation,
+and discipline rules with Live.
+
+## Sticks and discipline
+
+Each player will have one Stick slot. A Stick is primarily a route modifier: it
+may preserve a handoff, sustain a screen, alter a pass route, or trade safety for
+upside. Generic percentage bonuses are secondary tuning only.
+
+Some players will accumulate visible Discipline risk while they remain in a
+dangerous or high-impact state. Crossing an explicit threshold sends that player
+to the SINBIN for a defined duration and creates a short-handed problem. This is
+a planned V0.2 system, not yet enabled in the initial goal-model slice.

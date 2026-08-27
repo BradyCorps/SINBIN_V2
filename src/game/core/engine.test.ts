@@ -60,19 +60,21 @@ describe("SINBIN deterministic shift engine", () => {
     expect(next.puck.holderId).toBe("flare");
   });
 
-  it("S04_SHOT_READY exposes a transparent deterministic shot", () => {
+  it("S04_SHOT_READY exposes a transparent goal chance", () => {
     const state = shotReadyScenario();
     const preview = previewShot(state);
     expect(preview.quality).toBe(1);
-    expect(preview.banked).toBe(3_650);
-    expect(preview.formula).toContain("4,250 × 1.00 − 600 = 3,650");
+    expect(preview.shotQuality).toBe(4_250);
+    expect(preview.chancePercent).toBeCloseTo(53.676, 3);
+    expect(preview.formula).toContain("4,250 × 1.00 − 600 → 53.7% goal chance");
   });
 
-  it("S05_EARLY_CASHOUT banks a smaller but valid controlled result", () => {
+  it("S05_EARLY_CASHOUT resolves a lower-quality chance as a seeded save", () => {
     const next = reduceGame(earlyCashoutScenario(), { type: "SHOOT" });
-    expect(next.lastBankedAmount).toBe(600);
-    expect(next.bankedMomentum).toBe(600);
-    expect(next.status).toBe("banked");
+    expect(next.lastShot?.goal).toBe(false);
+    expect(next.lastShot?.chancePercent).toBeCloseTo(8.824, 3);
+    expect(next.teamGoals).toBe(0);
+    expect(next.status).toBe("shot-resolved");
   });
 
   it("S06_CLUTCH_CHANGE clears an exhausted-player danger window", () => {
@@ -86,22 +88,24 @@ describe("SINBIN deterministic shift engine", () => {
     expect(next.pressure).toBeLessThan(91);
   });
 
-  it("S07_STAMINA_TURNOVER loses unbanked Momentum after danger expires", () => {
+  it("S07_STAMINA_TURNOVER concedes after danger expires", () => {
     const next = reduceGame(staminaTurnoverScenario(), {
       type: "ADVANCE_CLOCK",
       elapsedMs: 600,
     });
     expect(next.status).toBe("turnover");
     expect(next.momentum).toBe(0);
+    expect(next.opponentGoals).toBe(1);
     expect(next.eventLog.at(-1)?.message).toContain("exhausted");
   });
 
-  it("S08_PRESSURE_TURNOVER has a distinct explainable cause", () => {
+  it("S08_PRESSURE_TURNOVER has a distinct explainable goal-against cause", () => {
     const next = reduceGame(pressureTurnoverScenario(), {
       type: "ADVANCE_CLOCK",
       elapsedMs: 1_000,
     });
     expect(next.status).toBe("turnover");
+    expect(next.opponentGoals).toBe(1);
     expect(next.eventLog.at(-1)?.message).toContain("Pressure reached 100");
   });
 
@@ -120,10 +124,11 @@ describe("SINBIN deterministic shift engine", () => {
     expect(rejected.eventLog.at(-1)?.type).toBe("RULE_REJECTED");
   });
 
-  it("S10_FIVE_SHIFT_PERIOD resolves the period target", () => {
+  it("S10_FIVE_SHIFT_PERIOD resolves the visible goal score", () => {
     const next = reduceGame(fifthShiftScenario(), { type: "SHOOT" });
     expect(next.status).toBe("period-complete");
-    expect(next.bankedMomentum).toBe(11_650);
+    expect(next.teamGoals).toBe(2);
+    expect(next.opponentGoals).toBe(0);
     expect(periodResult(next)).toBe("win");
   });
 

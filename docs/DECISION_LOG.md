@@ -30,3 +30,23 @@ Because the target repository was empty, PR 0–5 foundations are assembled in
 one reviewable bootstrap pull request with separate logical commits where
 possible. This avoids merging an unreviewed sequence of dependent empty-repo
 pull requests. Later work returns to small focused pull requests.
+
+## 2026-08-27 — V0.2 is desktop-first and goal-facing
+
+V0.2 prioritizes a 16:9 desktop presentation suitable for a PC-first Steam
+vertical slice. This is a presentation priority, not a second game: a future
+mobile interface will consume the same deterministic engine.
+
+The visible 10,000 Momentum target is removed. Momentum remains the temporary
+measure of offensive force, but SHOOT now resolves a transparent, seeded chance
+to score. Goals are the match score. Goalie composure and later defensive
+structure explain why a chance succeeds or fails.
+
+## 2026-08-27 — Coach Mode, sticks, and discipline are V0.2 foundations
+
+Coach Mode will not be a manually advanced version of Live. It will use finite
+opponent decision points over the shared engine. Sticks are the first intended
+equipment slot and must modify hockey grammar before they add generic numbers.
+Discipline will create visible, player-caused SINBIN risk; it is documented now
+and intentionally held from the first goal-model implementation until its
+short-handed state can be made legible.
