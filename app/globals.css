@@ -231,8 +231,8 @@ button:focus-visible {
 
 .bench-player {
   display: grid;
-  min-height: 168px;
-  grid-template-columns: 48px 84px minmax(0, 1fr);
+  min-height: 104px;
+  grid-template-columns: 48px minmax(0, 1fr);
   gap: 10px;
   padding: 10px;
   text-align: left;
@@ -278,29 +278,17 @@ button:focus-visible {
   font-size: 18px;
   letter-spacing: 0.03em;
 }
-.bench-player > div {
-  display: grid;
-  align-content: center;
-  gap: 5px;
-}
-
-.effect-line {
-  display: grid;
-  grid-template-columns: 74px minmax(0, 1fr);
-  gap: 7px;
-  margin: 0;
-  color: #cbd3cf;
+.bench-player > em {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  color: #bcd4d1;
   font-size: 9px;
-  line-height: 1.25;
+  font-style: normal;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-overflow: ellipsis;
   text-transform: uppercase;
-}
-.effect-line b {
-  color: var(--amber);
-  font-size: 8px;
-  letter-spacing: 0.07em;
-}
-.effect-line span {
-  overflow-wrap: anywhere;
+  white-space: nowrap;
 }
 
 .rink-panel {
@@ -369,12 +357,12 @@ button:focus-visible {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: center;
   gap: 16px;
-  padding: 38px 27px;
+  padding: 28px 27px;
 }
 .line-player {
   display: grid;
-  min-height: 330px;
-  grid-template-rows: auto auto 12px auto auto 1fr;
+  min-height: 220px;
+  grid-template-rows: auto auto 12px 1fr;
   gap: 9px;
   padding: 14px;
   text-align: left;
@@ -461,6 +449,20 @@ button:focus-visible {
 .line-player--low .line-player__stamina b {
   background: var(--danger);
 }
+.exit-effect {
+  align-self: end;
+  margin: 0;
+  color: #cbd3cf;
+  font-size: 10px;
+  line-height: 1.35;
+  text-transform: uppercase;
+}
+.exit-effect b {
+  margin-right: 7px;
+  color: var(--amber);
+  font-size: 9px;
+  letter-spacing: 0.09em;
+}
 .rink-legend {
   display: flex;
   justify-content: space-between;
@@ -476,14 +478,49 @@ button:focus-visible {
 
 .chance-panel {
   display: grid;
-  grid-template-rows: 168px 132px 80px 98px 54px;
-  gap: 12px;
+  grid-template-rows: 156px 112px 66px 78px 100px 48px;
+  gap: 8px;
+}
+.decision-panel {
+  display: grid;
+  align-content: center;
+  gap: 9px;
+  padding: 16px;
+  border: 1px solid var(--amber);
+  background: linear-gradient(145deg, #203c42, #10252e);
+}
+.decision-panel > span {
+  color: var(--amber);
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: 0.14em;
+}
+.decision-panel > strong {
+  color: var(--cream);
+  font-size: 23px;
+  line-height: 1;
+}
+.decision-panel > p {
+  margin: 0;
+  color: #d0dad5;
+  font-size: 11px;
+  line-height: 1.35;
+}
+.decision-panel > small {
+  overflow: hidden;
+  color: #8ebec8;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 .chance-summary {
   display: grid;
   align-content: center;
   justify-items: center;
-  padding: 16px;
+  padding: 11px;
   border: 1px solid var(--brass);
   background: linear-gradient(145deg, #352e20, #1b2d31);
   text-align: center;
@@ -497,26 +534,26 @@ button:focus-visible {
 }
 .chance-summary strong {
   color: var(--cream);
-  font-size: 64px;
+  font-size: 48px;
   line-height: 0.9;
 }
 .chance-summary small {
-  margin-top: 9px;
+  margin-top: 4px;
   color: #c9d0ca;
   font-size: 10px;
 }
 .chance-factors {
   display: grid;
   align-content: center;
-  gap: 9px;
-  padding: 13px;
+  gap: 5px;
+  padding: 9px 11px;
   border-left: 3px solid var(--blue);
   background: #102c39;
 }
 .chance-factors span {
   display: flex;
   justify-content: space-between;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 900;
   letter-spacing: 0.05em;
 }

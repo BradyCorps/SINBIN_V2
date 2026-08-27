@@ -38,19 +38,49 @@ function format(value: number): string {
   return Math.round(value).toLocaleString();
 }
 
-function EffectLine({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <p className="effect-line">
-      <b>{label}</b>
-      <span>{children}</span>
-    </p>
-  );
+function nextMove(
+  state: GameState,
+  selectedBench: PlayerId | null,
+): { title: string; detail: string } {
+  if (selectedBench) {
+    const player = playerDefinition(selectedBench);
+    return {
+      title: `Put ${player.shortName} on the ice`,
+      detail: `Click Recover, Create, or Finish to make the change. Their Entry effect will ${player.entryEffect.replaceAll("-", " ")}.`,
+    };
+  }
+
+  switch (state.puck.phase) {
+    case "loose-puck":
+      return {
+        title: "Recover the loose puck",
+        detail:
+          "Rook is a Retriever. Put them on the ice to take possession and start the play.",
+      };
+    case "controlled":
+      return {
+        title: "Create a zone entry",
+        detail:
+          "Use a Carrier or Playmaker to move controlled possession forward.",
+      };
+    case "zone-entry":
+      return {
+        title: "Open a scoring seam",
+        detail: "A Playmaker turns the zone entry into a scoring setup.",
+      };
+    case "scoring-setup":
+      return {
+        title: "Find the finisher",
+        detail:
+          "A Sniper in Finish converts the setup into a shot-ready chance.",
+      };
+    case "shot-ready":
+      return {
+        title: "Shoot or push your luck",
+        detail:
+          "You have created a chance. Shoot now, or wait for more Momentum while Stamina and Pressure worsen.",
+      };
+  }
 }
 
 function ActivePlayer({
@@ -93,15 +123,9 @@ function ActivePlayer({
       <div className="line-player__stamina" aria-hidden="true">
         <b style={{ width: `${staminaPercent}%` }} />
       </div>
-      <EffectLine label="ENTER">
-        {definition.entryEffect.replaceAll("-", " ")}
-      </EffectLine>
-      <EffectLine label="EXIT">
-        {definition.exitEffect.replaceAll("-", " ")}
-      </EffectLine>
-      <EffectLine label={definition.stick.name}>
-        {definition.stick.effect}
-      </EffectLine>
+      <p className="exit-effect">
+        <b>EXIT</b> {definition.exitEffect.replaceAll("-", " ")}
+      </p>
     </button>
   );
 }
@@ -135,19 +159,11 @@ function BenchPlayer({
         <strong>{definition.shortName}</strong>
         <b>{Math.ceil(runtime.stamina)} STA</b>
       </span>
-      <div>
-        <EffectLine label="ENTER">
-          {locked
-            ? `${(runtime.reentryLockMs / 1_000).toFixed(1)}s re-entry lock`
-            : definition.entryEffect.replaceAll("-", " ")}
-        </EffectLine>
-        <EffectLine label="EXIT">
-          {definition.exitEffect.replaceAll("-", " ")}
-        </EffectLine>
-        <EffectLine label={definition.stick.name}>
-          {definition.stick.effect}
-        </EffectLine>
-      </div>
+      <em>
+        {locked
+          ? `${(runtime.reentryLockMs / 1_000).toFixed(1)}s re-entry lock`
+          : `ENTER: ${definition.entryEffect.replaceAll("-", " ")}`}
+      </em>
     </button>
   );
 }
@@ -164,7 +180,7 @@ export function GamePrototype({
   );
   const [mode, setMode] = useState<LaneMode>(initialMode);
   const [selectedBench, setSelectedBench] = useState<PlayerId | null>(null);
-  const [livePaused, setLivePaused] = useState(false);
+  const [livePaused, setLivePaused] = useState(initialMode === "live");
 
   const dispatch = useCallback((action: GameAction) => {
     setGame((current) => reduceGame(current, action));
@@ -177,7 +193,12 @@ export function GamePrototype({
   }, [dispatch, game.status, livePaused, mode]);
 
   const shot = useMemo(() => previewShot(game), [game]);
-  const latestEvent = game.eventLog.at(-1)?.message ?? "Shift ready.";
+  const latestEvent =
+    [...game.eventLog]
+      .reverse()
+      .find((event) => event.type !== "CLOCK_ADVANCED")?.message ??
+    "Shift ready.";
+  const guidance = nextMove(game, selectedBench);
   const result = periodResult(game);
 
   const replace = (slot: ActiveSlot) => {
@@ -222,7 +243,7 @@ export function GamePrototype({
                   className={mode === lane ? "selected" : ""}
                   onClick={() => {
                     setMode(lane);
-                    setLivePaused(false);
+                    setLivePaused(lane === "live");
                   }}
                   aria-pressed={mode === lane}
                 >
@@ -266,7 +287,7 @@ export function GamePrototype({
                   </span>
                 ))}
               </div>
-              <p aria-live="polite">{latestEvent}</p>
+              <p aria-live="polite">{guidance.title}</p>
             </header>
             <div className="active-line" aria-label="Active line">
               {ACTIVE_SLOTS.map((slot) => (
@@ -290,10 +311,20 @@ export function GamePrototype({
           </section>
 
           <aside className="chance-panel" aria-label="Shot chance and actions">
+            <div className="decision-panel">
+              <span>YOUR NEXT MOVE</span>
+              <strong>{guidance.title}</strong>
+              <p>{guidance.detail}</p>
+              <small>LAST ACTION: {latestEvent}</small>
+            </div>
             <div className="chance-summary">
               <span>GOAL CHANCE</span>
               <strong>{shot.chancePercent.toFixed(1)}%</strong>
-              <small>{shot.formula}</small>
+              <small>
+                {game.puck.phase === "shot-ready"
+                  ? "The shot is ready."
+                  : "Build the play before shooting."}
+              </small>
             </div>
             <div className="chance-factors">
               <span>
@@ -302,9 +333,6 @@ export function GamePrototype({
               <span>
                 GOALIE COMPOSURE <b>−{format(game.goalieComposure)}</b>
               </span>
-              {shot.factors.map((factor) => (
-                <small key={factor}>{factor}</small>
-              ))}
             </div>
             <div className="pressure-module">
               <span>OPPONENT PRESSURE</span>
@@ -338,7 +366,7 @@ export function GamePrototype({
                 onClick={() => setLivePaused((paused) => !paused)}
                 disabled={game.status !== "playing"}
               >
-                {livePaused ? "RESUME LIVE CLOCK" : "PAUSE LIVE CLOCK"}
+                {livePaused ? "START LIVE CLOCK" : "PAUSE LIVE CLOCK"}
               </button>
             )}
           </aside>
