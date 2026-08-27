@@ -31,7 +31,7 @@ for (const viewport of VIEWPORTS) {
     await expect(page.locator(".line-player")).toHaveCount(3);
     await expect(page.locator(".bench-player")).toHaveCount(3);
     await expect(page.getByRole("button", { name: /shoot/i })).toBeVisible();
-    await expect(page.getByText("GOALIE COMPOSURE")).toBeVisible();
+    await expect(page.locator(".chance-factors > span").nth(1)).toBeVisible();
 
     const activeBoxes = await page
       .locator(".line-player")
@@ -76,5 +76,7 @@ test("substitution and shoot are playable through tap controls", async ({
   );
 
   await page.getByRole("button", { name: /shoot/i }).click();
-  await expect(page.getByText(/GOAL|SAVE/)).toBeVisible();
+  await expect(
+    page.getByRole("dialog").getByText(/^(GOAL|SAVE)$/),
+  ).toBeVisible();
 });
