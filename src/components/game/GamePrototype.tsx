@@ -1,32 +1,23 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { liveTick, tacticalBeat } from "@/src/game/clocks/policies";
-import { playerDefinition } from "@/src/game/content/players";
+import { useMemo, useState } from "react";
 import {
+  coverageLabel,
   createInitialGame,
-  periodResult,
   previewShot,
   reduceGame,
 } from "@/src/game/core/engine";
 import {
   ACTIVE_SLOTS,
+  LANES,
   type ActiveSlot,
   type GameAction,
   type GameState,
-  type LaneMode,
-  type PlayPhase,
+  type Lane,
   type PlayerId,
 } from "@/src/game/core/types";
+import { playerDefinition } from "@/src/game/content/players";
 import { StageScaler } from "./StageScaler";
-
-const PHASE_LABELS: Record<PlayPhase, string> = {
-  "loose-puck": "Loose puck",
-  controlled: "Controlled",
-  "zone-entry": "Zone entry",
-  "scoring-setup": "Scoring setup",
-  "shot-ready": "Shot ready",
-};
 
 const SLOT_LABELS: Record<ActiveSlot, string> = {
   recover: "Recover",
@@ -34,380 +25,332 @@ const SLOT_LABELS: Record<ActiveSlot, string> = {
   finish: "Finish",
 };
 
-function format(value: number): string {
-  return Math.round(value).toLocaleString();
+function puckLabel(state: GameState): string {
+  if (state.puck.state === "loose") return "Loose puck";
+  return `${state.puck.state === "chance" ? "Chance" : "Controlled puck"} · ${state.puck.zone} ${state.puck.lane}`;
 }
 
-function nextMove(
-  state: GameState,
-  selectedBench: PlayerId | null,
-): { title: string; detail: string } {
+function nextDecision(state: GameState, selectedBench: PlayerId | null) {
   if (selectedBench) {
     const player = playerDefinition(selectedBench);
     return {
-      title: `Put ${player.shortName} on the ice`,
-      detail: `Click Recover, Create, or Finish to make the change. Their Entry effect will ${player.entryEffect.replaceAll("-", " ")}.`,
+      title: `Change ${player.shortName} in`,
+      detail: `${player.shortName} enters as a ${player.role}. Click an active player to preview the change on the rink.`,
     };
   }
-
-  switch (state.puck.phase) {
-    case "loose-puck":
-      return {
-        title: "Recover the loose puck",
-        detail:
-          "Rook is a Retriever. Put them on the ice to take possession and start the play.",
-      };
-    case "controlled":
-      return {
-        title: "Create a zone entry",
-        detail:
-          "Use a Carrier or Playmaker to move controlled possession forward.",
-      };
-    case "zone-entry":
-      return {
-        title: "Open a scoring seam",
-        detail: "A Playmaker turns the zone entry into a scoring setup.",
-      };
-    case "scoring-setup":
-      return {
-        title: "Find the finisher",
-        detail:
-          "A Sniper in Finish converts the setup into a shot-ready chance.",
-      };
-    case "shot-ready":
-      return {
-        title: "Shoot or push your luck",
-        detail:
-          "You have created a chance. Shoot now, or wait for more Momentum while Stamina and Pressure worsen.",
-      };
+  if (state.penalty) {
+    return {
+      title: "Finish is short-handed",
+      detail: `${playerDefinition(state.penalty.playerId).shortName} is in the SINBIN for ${state.penalty.actionsRemaining} action${state.penalty.actionsRemaining === 1 ? "" : "s"}. Reset or protect the play until they return.`,
+    };
   }
+  if (state.puck.state === "loose") {
+    return {
+      title: "Recover possession",
+      detail:
+        "Get a Retriever on the ice. A bad change leaves the puck loose and allows the defence to reset.",
+    };
+  }
+  if (state.puck.zone === "neutral") {
+    return {
+      title: "Get Jet on the ice",
+      detail:
+        "Jet is the Carrier. Replacing Rook with a protected handoff moves the puck into the offensive zone and pulls a defender wide.",
+    };
+  }
+  if (state.puck.state === "controlled") {
+    return {
+      title: "Cycle the puck cross-ice",
+      detail:
+        "Lane is on the ice. CYCLE moves the puck to the far lane, pulls coverage, and forces the goalie to move.",
+    };
+  }
+  if (state.defence.goalie !== "screened") {
+    return {
+      title: "Create a screen",
+      detail:
+        "The goalie is moving, but still sees the puck. Change Ridge in to pin the defender and screen the net.",
+    };
+  }
+  return {
+    title: "The net is exposed",
+    detail:
+      "The shooting lane is open, the goalie is screened, and Flare is available. SHOOT is a deterministic goal.",
+  };
 }
 
-function ActivePlayer({
-  state,
-  slot,
-  selectedIncoming,
-  onReplace,
-}: {
-  state: GameState;
-  slot: ActiveSlot;
-  selectedIncoming: PlayerId | null;
-  onReplace: (slot: ActiveSlot) => void;
-}) {
-  const id = state.active[slot];
-  const definition = playerDefinition(id);
-  const runtime = state.players[id];
-  const isHolder = state.puck.holderId === id;
-  const staminaPercent = (runtime.stamina / definition.maxStamina) * 100;
-
-  return (
-    <button
-      className={`line-player${isHolder ? " line-player--puck" : ""}${
-        runtime.stamina <= 20 ? " line-player--low" : ""
-      }`}
-      style={{ "--player-accent": definition.accent } as React.CSSProperties}
-      onClick={() => onReplace(slot)}
-      disabled={!selectedIncoming || state.status !== "playing"}
-      aria-label={`${SLOT_LABELS[slot]}: ${definition.name}, ${definition.role}, ${Math.ceil(runtime.stamina)} Stamina${isHolder ? ", has puck" : ""}${selectedIncoming ? `. Replace with ${playerDefinition(selectedIncoming).name}` : ""}`}
-    >
-      <header>
-        <span>{SLOT_LABELS[slot]}</span>
-        <b>{definition.role}</b>
-        {isHolder && <em>PUCK</em>}
-      </header>
-      <div className="line-player__identity">
-        <i aria-hidden="true">{definition.shortName.at(0)}</i>
-        <strong>{definition.shortName}</strong>
-        <small>{Math.ceil(runtime.stamina)} STA</small>
-      </div>
-      <div className="line-player__stamina" aria-hidden="true">
-        <b style={{ width: `${staminaPercent}%` }} />
-      </div>
-      <p className="exit-effect">
-        <b>EXIT</b> {definition.exitEffect.replaceAll("-", " ")}
-      </p>
-    </button>
-  );
-}
-
-function BenchPlayer({
-  state,
+function PlayerCard({
   id,
+  state,
+  location,
   selected,
-  onSelect,
+  onClick,
 }: {
-  state: GameState;
   id: PlayerId;
-  selected: boolean;
-  onSelect: () => void;
+  state: GameState;
+  location: string;
+  selected?: boolean;
+  onClick: () => void;
 }) {
-  const definition = playerDefinition(id);
+  const player = playerDefinition(id);
   const runtime = state.players[id];
-  const locked = runtime.reentryLockMs > 0;
+  const penalized = state.penalty?.playerId === id;
   return (
     <button
-      className={`bench-player${selected ? " bench-player--selected" : ""}`}
-      style={{ "--player-accent": definition.accent } as React.CSSProperties}
-      onClick={onSelect}
-      disabled={state.status !== "playing" || locked}
-      aria-pressed={selected}
-      aria-label={`${definition.name}, ${definition.role}, ${Math.ceil(runtime.stamina)} Stamina${locked ? `, locked for ${Math.ceil(runtime.reentryLockMs / 100) / 10} seconds` : ""}`}
+      className={`player-card${selected ? " player-card--selected" : ""}${penalized ? " player-card--penalized" : ""}`}
+      style={{ "--player-accent": player.accent } as React.CSSProperties}
+      onClick={onClick}
+      disabled={state.status !== "playing"}
+      aria-label={`${player.name}, ${player.role}, ${location}${penalized ? ", in the SINBIN" : ""}`}
     >
-      <i aria-hidden="true">{definition.shortName.at(0)}</i>
-      <span>
-        <small>{definition.role}</small>
-        <strong>{definition.shortName}</strong>
-        <b>{Math.ceil(runtime.stamina)} STA</b>
+      <span className="player-card__role">
+        {location} · {player.role}
       </span>
-      <em>
-        {locked
-          ? `${(runtime.reentryLockMs / 1_000).toFixed(1)}s re-entry lock`
-          : `ENTER: ${definition.entryEffect.replaceAll("-", " ")}`}
-      </em>
+      <div className="player-card__identity">
+        <i aria-hidden="true">{player.shortName.at(0)}</i>
+        <strong>{player.shortName}</strong>
+        {state.puck.holderId === id && <em>PUCK</em>}
+      </div>
+      <small>
+        {penalized
+          ? `SINBIN · ${state.penalty?.actionsRemaining} ACTIONS`
+          : `${Math.ceil(runtime.stamina)} STA · DISC ${runtime.discipline}`}
+      </small>
     </button>
   );
 }
 
-export function GamePrototype({
-  initialState,
-  initialMode = "live",
-}: {
-  initialState?: GameState;
-  initialMode?: LaneMode;
-}) {
+function DefenceToken({ lane, state }: { lane: Lane; state: GameState }) {
+  const coverage = state.defence.coverage[lane];
+  return (
+    <div className={`defender-token defender-token--${coverage}`}>
+      <span>{lane === "slot" ? "SLOT" : `${lane.toUpperCase()} LANE`}</span>
+      <strong>{coverageLabel(coverage)}</strong>
+    </div>
+  );
+}
+
+export function GamePrototype({ initialState }: { initialState?: GameState }) {
   const [game, setGame] = useState<GameState>(
     () => initialState ?? createInitialGame(),
   );
-  const [mode, setMode] = useState<LaneMode>(initialMode);
   const [selectedBench, setSelectedBench] = useState<PlayerId | null>(null);
-  const [livePaused, setLivePaused] = useState(initialMode === "live");
+  const [inspectedId, setInspectedId] = useState<PlayerId>("rook");
 
-  const dispatch = useCallback((action: GameAction) => {
+  const dispatch = (action: GameAction) => {
     setGame((current) => reduceGame(current, action));
-  }, []);
-
-  useEffect(() => {
-    if (mode !== "live" || livePaused || game.status !== "playing") return;
-    const timer = window.setInterval(() => dispatch(liveTick()), 100);
-    return () => window.clearInterval(timer);
-  }, [dispatch, game.status, livePaused, mode]);
-
+  };
   const shot = useMemo(() => previewShot(game), [game]);
-  const latestEvent =
-    [...game.eventLog]
-      .reverse()
-      .find((event) => event.type !== "CLOCK_ADVANCED")?.message ??
-    "Shift ready.";
-  const guidance = nextMove(game, selectedBench);
-  const result = periodResult(game);
+  const guidance = nextDecision(game, selectedBench);
+  const detailId = selectedBench ?? inspectedId;
+  const detail = playerDefinition(detailId);
+  const latestEvents = game.eventLog.slice(-4).reverse();
 
-  const replace = (slot: ActiveSlot) => {
-    if (!selectedBench) return;
-    dispatch({ type: "SUBSTITUTE", incomingId: selectedBench, slot });
-    setSelectedBench(null);
+  const chooseBench = (id: PlayerId) => {
+    setSelectedBench((current) => (current === id ? null : id));
+    setInspectedId(id);
   };
 
-  const restart = () => {
-    dispatch({ type: "RESTART" });
+  const chooseActive = (slot: ActiveSlot) => {
+    const id = game.active[slot];
+    if (!selectedBench) {
+      setInspectedId(id);
+      return;
+    }
+    dispatch({ type: "SUBSTITUTE", incomingId: selectedBench, slot });
     setSelectedBench(null);
-    setLivePaused(false);
   };
 
   return (
     <main className="prototype-viewport">
       <StageScaler>
-        <section className="prototype-stage" aria-label="SINBIN V0.2 prototype">
-          <header className="match-header">
-            <div className="wordmark">
-              <small>V0.2 LIVE SHIFT</small>
+        <section
+          className="v03-stage"
+          aria-label="SINBIN V0.3 core mechanics lab"
+        >
+          <header className="v03-header">
+            <div>
+              <small>V0.3 RECTANGLE TEST</small>
               <strong>SINBIN</strong>
-              <span>Break the shape. Beat the goalie.</span>
+              <span>Break the shape. Expose the net.</span>
             </div>
-            <div className="scoreboard" aria-label="Match score">
-              <span>SINBIN</span>
-              <strong>
-                {game.teamGoals} <i>—</i> {game.opponentGoals}
-              </strong>
-              <span>OPPONENT</span>
-            </div>
-            <div className="shift-module">
-              <span>SHIFT</span>
-              <strong>
-                {game.shiftNumber}/{game.maximumShifts}
-              </strong>
-            </div>
-            <div className="mode-toggle" aria-label="Pacing lane">
-              {(["live", "tactical"] as const).map((lane) => (
-                <button
-                  key={lane}
-                  className={mode === lane ? "selected" : ""}
-                  onClick={() => {
-                    setMode(lane);
-                    setLivePaused(lane === "live");
-                  }}
-                  aria-pressed={mode === lane}
-                >
-                  {lane === "live" ? "LIVE" : "COACH LAB"}
-                </button>
-              ))}
-            </div>
+            <p>ONE SHIFT · DETERMINISTIC OUTCOMES · NO PASSIVE SCORING</p>
+            <button
+              onClick={() => {
+                dispatch({ type: "RESTART" });
+                setSelectedBench(null);
+              }}
+            >
+              RESTART TEST
+            </button>
           </header>
 
-          <aside className="bench-panel" aria-label="Bench and effects">
+          <aside className="v03-bench" aria-label="Bench">
             <header>
               <span>BENCH</span>
               <strong>
-                {selectedBench ? "CHOOSE A SLOT" : "SELECT INCOMING"}
+                {selectedBench ? "CHOOSE WHO LEAVES" : "SELECT A CHANGE"}
               </strong>
             </header>
-            <div className="bench-list">
+            <div>
               {game.bench.map((id) => (
-                <BenchPlayer
+                <PlayerCard
                   key={id}
-                  state={game}
                   id={id}
+                  state={game}
+                  location="Bench"
                   selected={selectedBench === id}
-                  onSelect={() =>
-                    setSelectedBench((current) => (current === id ? null : id))
-                  }
+                  onClick={() => chooseBench(id)}
                 />
               ))}
             </div>
           </aside>
 
-          <section className="rink-panel" aria-label="Current hockey play">
-            <header className="rink-status">
-              <div className="phase-track">
-                {(Object.keys(PHASE_LABELS) as PlayPhase[]).map((phase) => (
-                  <span
-                    key={phase}
-                    className={phase === game.puck.phase ? "current" : ""}
-                  >
-                    {PHASE_LABELS[phase]}
-                  </span>
-                ))}
+          <section
+            className="v03-rink"
+            aria-label="Rink and defensive structure"
+          >
+            <header>
+              <div>
+                <span>PUCK</span>
+                <strong>{puckLabel(game)}</strong>
               </div>
-              <p aria-live="polite">{guidance.title}</p>
+              <div>
+                <span>FORECHECK</span>
+                <strong>{game.defence.forecheck}</strong>
+              </div>
+              <div>
+                <span>GOALIE</span>
+                <strong
+                  className={`goalie-state goalie-state--${game.defence.goalie}`}
+                >
+                  {game.defence.goalie}
+                </strong>
+              </div>
             </header>
+            <div className="defence-board">
+              {LANES.map((lane) => (
+                <div key={lane} className={`rink-lane rink-lane--${lane}`}>
+                  <DefenceToken lane={lane} state={game} />
+                  {game.puck.lane === lane && (
+                    <div
+                      className={`puck-token puck-token--${game.puck.state}`}
+                    >
+                      PUCK
+                    </div>
+                  )}
+                </div>
+              ))}
+              <div
+                className={`goalie-token goalie-token--${game.defence.goalie}`}
+              >
+                <span>GOALIE</span>
+                <strong>{game.defence.goalie}</strong>
+              </div>
+            </div>
             <div className="active-line" aria-label="Active line">
               {ACTIVE_SLOTS.map((slot) => (
-                <ActivePlayer
+                <PlayerCard
                   key={slot}
+                  id={game.active[slot]}
                   state={game}
-                  slot={slot}
-                  selectedIncoming={selectedBench}
-                  onReplace={replace}
+                  location={SLOT_LABELS[slot]}
+                  onClick={() => chooseActive(slot)}
                 />
               ))}
-            </div>
-            <div className="rink-legend">
-              <span>PUCK STATE: {PHASE_LABELS[game.puck.phase]}</span>
-              <span>
-                {game.dangerRemainingMs === null
-                  ? "LINE STABLE"
-                  : `DANGER: ${(game.dangerRemainingMs / 1_000).toFixed(1)}S`}
-              </span>
             </div>
           </section>
 
-          <aside className="chance-panel" aria-label="Shot chance and actions">
-            <div className="decision-panel">
-              <span>YOUR NEXT MOVE</span>
+          <aside
+            className="v03-decision"
+            aria-label="Decision and player detail"
+          >
+            <section className="next-move">
+              <span>YOUR NEXT DECISION</span>
               <strong>{guidance.title}</strong>
               <p>{guidance.detail}</p>
-              <small>LAST ACTION: {latestEvent}</small>
-            </div>
-            <div className="chance-summary">
-              <span>GOAL CHANCE</span>
-              <strong>{shot.chancePercent.toFixed(1)}%</strong>
-              <small>
-                {game.puck.phase === "shot-ready"
-                  ? "The shot is ready."
-                  : "Build the play before shooting."}
-              </small>
-            </div>
-            <div className="chance-factors">
-              <span>
-                UNBANKED MOMENTUM <b>{format(game.momentum)}</b>
-              </span>
-              <span>
-                GOALIE COMPOSURE <b>−{format(game.goalieComposure)}</b>
-              </span>
-            </div>
-            <div className="pressure-module">
-              <span>OPPONENT PRESSURE</span>
-              <strong>{format(game.pressure)} / 100</strong>
-              <i aria-hidden="true">
-                <b style={{ width: `${game.pressure}%` }} />
-              </i>
-            </div>
-            <button
-              className="shoot-button"
-              onClick={() => {
-                setSelectedBench(null);
-                dispatch({ type: "SHOOT" });
-              }}
-              disabled={game.status !== "playing"}
-            >
-              <span>SHOOT</span>
-              <strong>{shot.chancePercent.toFixed(1)}% TO SCORE</strong>
-            </button>
-            {mode === "tactical" ? (
+            </section>
+
+            <section className="shot-preview">
+              <header>
+                <span>SHOT READ</span>
+                <strong>{shot.rating}/5</strong>
+              </header>
+              {shot.factors.map((factor) => (
+                <p
+                  key={factor.label}
+                  className={factor.active ? "active" : "inactive"}
+                >
+                  <i>{factor.active ? "✓" : "×"}</i> {factor.label}
+                </p>
+              ))}
+              <small>{shot.summary}</small>
+            </section>
+
+            <section className="player-detail">
+              <span>PLAYER DETAIL · {detail.role.toUpperCase()}</span>
+              <strong>{detail.name}</strong>
+              <p>
+                <b>ENTER</b> {detail.entryEffect.replaceAll("-", " ")}
+              </p>
+              <p>
+                <b>EXIT</b> {detail.exitEffect.replaceAll("-", " ")}
+              </p>
+              <p>
+                <b>STICK</b> {detail.stick.name} <em>parked for this test</em>
+              </p>
+            </section>
+
+            <section className="lab-actions">
               <button
-                className="clock-button"
-                onClick={() => dispatch(tacticalBeat())}
+                onClick={() => dispatch({ type: "CYCLE" })}
                 disabled={game.status !== "playing"}
               >
-                ADVANCE LAB BEAT
+                CYCLE / EXTEND
               </button>
-            ) : (
               <button
-                className="clock-button"
-                onClick={() => setLivePaused((paused) => !paused)}
+                onClick={() => dispatch({ type: "RESET_PLAY" })}
                 disabled={game.status !== "playing"}
               >
-                {livePaused ? "START LIVE CLOCK" : "PAUSE LIVE CLOCK"}
+                PROTECT / RESET
               </button>
-            )}
+              <button
+                className="shoot"
+                onClick={() => dispatch({ type: "SHOOT" })}
+                disabled={game.status !== "playing"}
+              >
+                SHOOT · {shot.result.toUpperCase()}
+              </button>
+            </section>
           </aside>
 
+          <footer className="v03-log" aria-label="Causal play log">
+            <span>PLAY LOG</span>
+            {latestEvents.map((event) => (
+              <p key={event.id}>{event.message}</p>
+            ))}
+            <strong>COUNTER THREAT {game.counterThreat}/100</strong>
+          </footer>
+
           {game.status !== "playing" && (
-            <div className="shift-overlay" role="dialog" aria-modal="true">
-              <small>
-                {game.status === "period-complete"
-                  ? "PERIOD COMPLETE"
-                  : `SHIFT ${game.shiftNumber} COMPLETE`}
-              </small>
+            <div className="v03-result" role="dialog" aria-modal="true">
+              <small>SHIFT RESOLVED</small>
               <strong>
-                {game.lastShiftOutcome === "goal"
+                {game.status === "goal"
                   ? "GOAL"
-                  : game.lastShiftOutcome === "save"
+                  : game.status === "save"
                     ? "SAVE"
-                    : "GOAL AGAINST"}
+                    : "BREAKDOWN"}
               </strong>
-              <span>
-                {game.status === "period-complete"
-                  ? `${result.toUpperCase()} · SINBIN ${game.teamGoals} — ${game.opponentGoals} OPPONENT`
-                  : latestEvent}
-              </span>
-              {game.lastShot && (
-                <em>
-                  {game.lastShot.chancePercent.toFixed(1)}% chance · roll{" "}
-                  {game.lastShot.rollPercent.toFixed(1)}
-                </em>
-              )}
-              {game.status === "period-complete" ? (
-                <button onClick={restart}>RESTART PERIOD</button>
-              ) : (
-                <button
-                  onClick={() => {
-                    setSelectedBench(null);
-                    dispatch({ type: "NEXT_SHIFT" });
-                  }}
-                >
-                  START SHIFT {game.shiftNumber + 1}
-                </button>
-              )}
+              <p>{game.eventLog.at(-1)?.message}</p>
+              <button
+                onClick={() => {
+                  dispatch({ type: "RESTART" });
+                  setSelectedBench(null);
+                }}
+              >
+                RUN THE TEST AGAIN
+              </button>
             </div>
           )}
         </section>

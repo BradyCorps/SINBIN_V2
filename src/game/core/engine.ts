@@ -6,39 +6,21 @@ import {
 } from "../content/players";
 import {
   ACTIVE_SLOTS,
+  LANES,
   type ActiveSlot,
+  type CoverageState,
   type GameAction,
   type GameEvent,
   type GameState,
-  type PlayPhase,
+  type Lane,
   type PlayerId,
+  type PlayerRole,
   type ShotPreview,
 } from "./types";
 
-const ACTIVE_STAMINA_DRAIN_PER_SECOND = 4;
-const PRESSURE_GAIN_PER_SECOND = 3;
-const SUBSTITUTION_PRESSURE = 4;
-const DANGER_WINDOW_MS = 600;
-const REENTRY_LOCK_MS = 2_000;
-const GOAL_CHANCE_SCALE = 6_800;
-const MINIMUM_GOAL_CHANCE = 5;
-const MAXIMUM_GOAL_CHANCE = 95;
-
-const PHASE_QUALITY: Record<PlayPhase, number> = {
-  "loose-puck": 0.2,
-  controlled: 0.4,
-  "zone-entry": 0.6,
-  "scoring-setup": 0.82,
-  "shot-ready": 1,
-};
-
-const PHASE_DRIP_PER_SECOND: Record<PlayPhase, number> = {
-  "loose-puck": 0,
-  controlled: 8,
-  "zone-entry": 20,
-  "scoring-setup": 35,
-  "shot-ready": 80,
-};
+const MAX_COUNTER_THREAT = 100;
+const FLARE_DISCIPLINE_PER_CYCLE = 50;
+const PENALTY_ACTIONS = 2;
 
 function cloneState(state: GameState): GameState {
   return structuredClone(state);
@@ -48,10 +30,6 @@ function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(maximum, Math.max(minimum, value));
 }
 
-function roundEngineValue(value: number): number {
-  return Math.round(value * 1_000) / 1_000;
-}
-
 function appendEvent(
   state: GameState,
   type: GameEvent["type"],
@@ -59,7 +37,7 @@ function appendEvent(
 ): void {
   state.eventSequence += 1;
   state.eventLog.push({ id: state.eventSequence, type, message });
-  if (state.eventLog.length > 40) state.eventLog.shift();
+  if (state.eventLog.length > 18) state.eventLog.shift();
 }
 
 function activeIds(state: GameState): PlayerId[] {
@@ -68,11 +46,42 @@ function activeIds(state: GameState): PlayerId[] {
 
 function activePlayerWithRole(
   state: GameState,
-  role: "Playmaker" | "Sniper",
+  role: PlayerRole,
 ): PlayerId | null {
   return (
     activeIds(state).find((id) => playerDefinition(id).role === role) ?? null
   );
+}
+
+function oppositeLane(lane: Lane): Lane {
+  if (lane === "left") return "right";
+  if (lane === "right") return "left";
+  return "right";
+}
+
+function resetDefence(state: GameState): void {
+  state.defence.coverage = {
+    left: "covered",
+    slot: "covered",
+    right: "covered",
+  };
+  state.defence.forecheck = "active";
+  state.defence.goalie = "set";
+}
+
+function advancePenalty(state: GameState): void {
+  if (!state.penalty) return;
+  state.penalty.actionsRemaining -= 1;
+  if (state.penalty.actionsRemaining > 0) return;
+
+  const player = playerDefinition(state.penalty.playerId);
+  state.players[player.id].discipline = 0;
+  state.penalty = null;
+  appendEvent(state, "PENALTY", `${player.shortName} is back from the SINBIN.`);
+}
+
+function isPenalized(state: GameState, playerId: PlayerId): boolean {
+  return state.penalty?.playerId === playerId;
 }
 
 function assertValidState(state: GameState): void {
@@ -80,24 +89,15 @@ function assertValidState(state: GameState): void {
   if (roster.length !== 6 || new Set(roster).size !== 6) {
     throw new Error("A SINBIN lineup must contain six unique players.");
   }
-  if (
-    state.puck.holderId !== null &&
-    !activeIds(state).includes(state.puck.holderId)
-  ) {
-    throw new Error("The puck holder must be active.");
+  if (state.puck.holderId && !activeIds(state).includes(state.puck.holderId)) {
+    throw new Error("The puck holder must be on the ice.");
   }
-  if (state.pressure < 0 || state.pressure > 100) {
-    throw new Error("Pressure must remain between 0 and 100.");
+  if (state.counterThreat < 0 || state.counterThreat > MAX_COUNTER_THREAT) {
+    throw new Error("Counter threat must remain between 0 and 100.");
   }
-  if (state.teamGoals < 0 || state.opponentGoals < 0) {
-    throw new Error("Goals cannot be negative.");
-  }
-  for (const id of roster) {
-    const runtime = state.players[id];
-    const definition = playerDefinition(id);
-    if (!runtime) throw new Error(`Missing runtime state for ${id}.`);
-    if (runtime.stamina < 0 || runtime.stamina > definition.maxStamina) {
-      throw new Error(`Invalid Stamina for ${id}.`);
+  for (const lane of LANES) {
+    if (!state.defence.coverage[lane]) {
+      throw new Error(`Missing defensive coverage for ${lane}.`);
     }
   }
 }
@@ -106,7 +106,7 @@ export function createInitialGame(): GameState {
   const players = Object.fromEntries(
     Object.values(PLAYER_DEFINITIONS).map((player) => [
       player.id,
-      { stamina: player.maxStamina, reentryLockMs: 0 },
+      { stamina: player.maxStamina, reentryLockActions: 0, discipline: 0 },
     ]),
   );
 
@@ -115,250 +115,174 @@ export function createInitialGame(): GameState {
     bench: [...INITIAL_BENCH],
     players,
     puck: {
-      holderId: null,
-      phase: "loose-puck",
+      holderId: "rook",
+      zone: "neutral",
+      lane: "left",
+      state: "controlled",
       handoffProtected: false,
     },
-    pressure: 0,
-    momentum: 0,
-    teamGoals: 0,
-    opponentGoals: 0,
-    goalieComposure: 600,
-    shiftNumber: 1,
-    maximumShifts: 5,
+    defence: {
+      coverage: { left: "covered", slot: "covered", right: "covered" },
+      forecheck: "active",
+      goalie: "set",
+    },
+    counterThreat: 0,
+    penalty: null,
     status: "playing",
     lastShiftOutcome: null,
-    lastShot: null,
-    rngState: 0x51b1,
-    dangerRemainingMs: null,
-    elapsedMs: 0,
     eventSequence: 0,
     eventLog: [],
   };
-  appendEvent(state, "SHIFT_STARTED", "Shift 1 started with a loose puck.");
+  appendEvent(
+    state,
+    "SHIFT_STARTED",
+    "Rook has controlled the puck in the neutral-zone left lane. The defence is set.",
+  );
   assertValidState(state);
   return state;
 }
 
+function raiseThreat(state: GameState, amount: number, message: string): void {
+  state.counterThreat = clamp(
+    state.counterThreat + amount,
+    0,
+    MAX_COUNTER_THREAT,
+  );
+  appendEvent(state, "DEFENCE_RESPONSE", message);
+  if (state.counterThreat >= MAX_COUNTER_THREAT) {
+    state.status = "breakdown";
+    state.lastShiftOutcome = "breakdown";
+    appendEvent(
+      state,
+      "DEFENCE_RESPONSE",
+      "Breakdown: the opponent countered before the play could finish.",
+    );
+  }
+}
+
 function resolveExitEffect(state: GameState, outgoingId: PlayerId): void {
   const outgoing = playerDefinition(outgoingId);
-  switch (outgoing.exitEffect) {
-    case "protect-handoff":
+  switch (outgoing.role) {
+    case "Retriever":
       state.puck.handoffProtected = true;
-      state.pressure = clamp(state.pressure - 4, 0, 100);
       appendEvent(
         state,
         "EXIT_EFFECT",
-        `${outgoing.shortName} protected the handoff and relieved 4 Pressure.`,
+        `${outgoing.shortName} leaves a protected outlet for the next player.`,
       );
       break;
-    case "leave-lane":
+    case "Carrier":
       state.puck.handoffProtected = true;
-      if (
-        state.puck.phase === "zone-entry" ||
-        state.puck.phase === "scoring-setup"
-      ) {
-        state.momentum += 200;
+      if (state.puck.zone === "offensive") {
+        state.defence.coverage[state.puck.lane] = "open";
       }
       appendEvent(
         state,
         "EXIT_EFFECT",
-        `${outgoing.shortName} left the lane open for the incoming player.`,
+        `${outgoing.shortName} leaves the lane open while changing.`,
       );
       break;
-    case "bank-setup":
-      if (state.puck.phase === "scoring-setup") state.momentum += 300;
+    case "Grinder":
+      if (state.defence.goalie === "screened") state.defence.goalie = "moving";
+      appendEvent(
+        state,
+        "EXIT_EFFECT",
+        `${outgoing.shortName}'s screen clears as they leave the ice.`,
+      );
+      break;
+    case "Playmaker":
       state.puck.handoffProtected = true;
       appendEvent(
         state,
         "EXIT_EFFECT",
-        `${outgoing.shortName} preserved the shape of the setup.`,
+        `${outgoing.shortName} keeps the passing lane alive through the change.`,
       );
       break;
-    case "create-rebound":
-      if (state.puck.phase === "shot-ready") state.momentum += 350;
-      state.puck.handoffProtected = true;
+    case "Sniper":
+      state.defence.coverage[state.puck.lane] =
+        state.puck.zone === "offensive"
+          ? "open"
+          : state.defence.coverage[state.puck.lane];
       appendEvent(
         state,
         "EXIT_EFFECT",
-        `${outgoing.shortName} left a live rebound.`,
+        `${outgoing.shortName} drags their check out of the shooting lane.`,
       );
       break;
-    case "draw-coverage":
-      state.pressure = clamp(state.pressure - 8, 0, 100);
+    case "Disruptor":
+      state.counterThreat = clamp(
+        state.counterThreat - 12,
+        0,
+        MAX_COUNTER_THREAT,
+      );
       appendEvent(
         state,
         "EXIT_EFFECT",
-        `${outgoing.shortName} pulled coverage away and relieved 8 Pressure.`,
-      );
-      break;
-    case "release-pressure":
-      state.pressure = clamp(state.pressure - 6, 0, 100);
-      appendEvent(
-        state,
-        "EXIT_EFFECT",
-        `${outgoing.shortName} released 6 Pressure on exit.`,
+        `${outgoing.shortName} releases counter pressure on exit.`,
       );
       break;
   }
-}
-
-function advancePlay(
-  state: GameState,
-  phase: PlayPhase,
-  holderId: PlayerId,
-  momentum: number,
-  message: string,
-): void {
-  state.puck.phase = phase;
-  state.puck.holderId = holderId;
-  state.momentum += momentum;
-  appendEvent(state, "PLAY_ADVANCED", `${message} +${momentum} Momentum.`);
 }
 
 function resolveEntryEffect(state: GameState, incomingId: PlayerId): void {
   const incoming = playerDefinition(incomingId);
-  switch (incoming.entryEffect) {
-    case "retrieve-puck":
-      if (state.puck.phase === "loose-puck") {
-        advancePlay(
-          state,
-          "controlled",
-          incomingId,
-          450,
-          `${incoming.shortName} retrieved the loose puck.`,
-        );
-      } else {
+  switch (incoming.role) {
+    case "Retriever":
+      if (state.puck.state === "loose") {
+        state.puck.state = "controlled";
+        state.puck.holderId = incomingId;
+        state.defence.forecheck = "broken";
         appendEvent(
           state,
           "ENTRY_EFFECT",
-          `${incoming.shortName} arrived without a loose puck to retrieve.`,
+          `${incoming.shortName} retrieves the loose puck and breaks the forecheck.`,
         );
       }
       break;
-    case "carry-puck":
-      if (state.puck.phase === "controlled") {
-        advancePlay(
-          state,
-          "zone-entry",
-          incomingId,
-          700,
-          `${incoming.shortName} carried possession through the line.`,
-        );
-      } else {
+    case "Carrier":
+      if (state.puck.state === "controlled" && state.puck.zone === "neutral") {
+        state.puck.zone = "offensive";
+        state.puck.holderId = incomingId;
+        state.defence.coverage[state.puck.lane] = "pulled";
         appendEvent(
           state,
           "ENTRY_EFFECT",
-          `${incoming.shortName} could not carry an uncontrolled puck.`,
+          `${incoming.shortName} carries into the offensive zone and pulls the ${state.puck.lane} defender wide.`,
         );
       }
       break;
-    case "create-seam":
-      if (state.puck.phase === "controlled") {
-        advancePlay(
-          state,
-          "zone-entry",
-          incomingId,
-          650,
-          `${incoming.shortName} turned control into an entry.`,
-        );
-      } else if (state.puck.phase === "zone-entry") {
-        advancePlay(
-          state,
-          "scoring-setup",
-          incomingId,
-          1_100,
-          `${incoming.shortName} opened a scoring seam.`,
-        );
-      } else {
+    case "Grinder":
+      if (state.puck.zone === "offensive") {
+        state.defence.coverage[state.puck.lane] = "pinned";
+        state.defence.goalie = "screened";
         appendEvent(
           state,
           "ENTRY_EFFECT",
-          `${incoming.shortName} found no controlled entry to develop.`,
+          `${incoming.shortName} pins the defender and screens the goalie.`,
         );
       }
       break;
-    case "finish-chance":
-      if (state.puck.phase === "scoring-setup") {
-        advancePlay(
-          state,
-          "shot-ready",
-          incomingId,
-          1_700,
-          `${incoming.shortName} converted the setup into a shot.`,
-        );
-      } else {
-        appendEvent(
-          state,
-          "ENTRY_EFFECT",
-          `${incoming.shortName} entered before a scoring setup existed.`,
-        );
-      }
-      break;
-    case "absorb-pressure":
-      state.pressure = clamp(state.pressure - 20, 0, 100);
+    case "Disruptor":
+      state.defence.forecheck = "broken";
+      state.counterThreat = clamp(
+        state.counterThreat - 20,
+        0,
+        MAX_COUNTER_THREAT,
+      );
       appendEvent(
         state,
         "ENTRY_EFFECT",
-        `${incoming.shortName} absorbed 20 opponent Pressure.`,
+        `${incoming.shortName} disrupts the forecheck and buys the line time.`,
       );
       break;
-    case "break-forecheck":
-      state.pressure = clamp(state.pressure - 28, 0, 100);
+    case "Playmaker":
+    case "Sniper":
       appendEvent(
         state,
         "ENTRY_EFFECT",
-        `${incoming.shortName} disrupted the forecheck for 28 Pressure.`,
+        `${incoming.shortName} is ready for the next route decision.`,
       );
       break;
-  }
-}
-
-function resolveOnIceSynergy(state: GameState): void {
-  if (state.puck.phase === "zone-entry") {
-    const playmakerId = activePlayerWithRole(state, "Playmaker");
-    if (playmakerId) {
-      advancePlay(
-        state,
-        "scoring-setup",
-        playmakerId,
-        1_100,
-        `${playerDefinition(playmakerId).shortName} connected the entry to a setup.`,
-      );
-    }
-  }
-
-  if (state.puck.phase === "scoring-setup") {
-    const sniperId = activePlayerWithRole(state, "Sniper");
-    if (sniperId && state.active.finish === sniperId) {
-      advancePlay(
-        state,
-        "shot-ready",
-        sniperId,
-        1_700,
-        `${playerDefinition(sniperId).shortName} arrived in the finishing lane.`,
-      );
-    }
-  }
-}
-
-function applyTurnover(state: GameState, message: string): void {
-  state.lastShiftOutcome = "conceded";
-  state.opponentGoals += 1;
-  state.momentum = 0;
-  state.status =
-    state.shiftNumber >= state.maximumShifts ? "period-complete" : "turnover";
-  state.dangerRemainingMs = null;
-  appendEvent(state, "TURNOVER", message);
-}
-
-function checkFailure(state: GameState): void {
-  if (state.pressure >= 100) {
-    state.pressure = 100;
-    applyTurnover(
-      state,
-      "Goal against: opponent Pressure reached 100 and the defence broke down.",
-    );
   }
 }
 
@@ -369,44 +293,51 @@ function substitute(
 ): GameState {
   const next = cloneState(state);
   const benchIndex = next.bench.indexOf(incomingId);
-  if (benchIndex < 0) {
+  if (benchIndex < 0 || isPenalized(next, incomingId)) {
     appendEvent(
       next,
       "RULE_REJECTED",
-      "Substitution rejected: player is not on the bench.",
+      "That player is unavailable from the bench.",
     );
     return next;
   }
-  if (next.players[incomingId].reentryLockMs > 0) {
+  const outgoingId = next.active[slot];
+  if (isPenalized(next, outgoingId)) {
     appendEvent(
       next,
       "RULE_REJECTED",
-      `${playerDefinition(incomingId).shortName} is still in re-entry lockout.`,
+      `${playerDefinition(outgoingId).shortName} is in the SINBIN; that lane is short-handed.`,
+    );
+    return next;
+  }
+  if (next.players[incomingId].reentryLockActions > 0) {
+    appendEvent(
+      next,
+      "RULE_REJECTED",
+      `${playerDefinition(incomingId).shortName} needs one more play action before returning.`,
     );
     return next;
   }
 
-  const outgoingId = next.active[slot];
   const outgoingHeldPuck = next.puck.holderId === outgoingId;
   next.puck.handoffProtected = false;
   resolveExitEffect(next, outgoingId);
-
   next.active[slot] = incomingId;
   next.bench[benchIndex] = outgoingId;
-  next.players[outgoingId].reentryLockMs = REENTRY_LOCK_MS;
-  next.players[incomingId].reentryLockMs = 0;
-  next.pressure = clamp(next.pressure + SUBSTITUTION_PRESSURE, 0, 100);
+  next.players[outgoingId].reentryLockActions = 1;
 
   if (outgoingHeldPuck) {
     if (next.puck.handoffProtected) {
       next.puck.holderId = incomingId;
     } else {
+      next.puck.state = "loose";
       next.puck.holderId = null;
-      next.puck.phase = "loose-puck";
+      next.puck.zone = "neutral";
+      resetDefence(next);
       appendEvent(
         next,
-        "PLAY_ADVANCED",
-        "The outgoing puck carrier left without a protected handoff.",
+        "DEFENCE_RESPONSE",
+        "The change lost the puck and the defence reset.",
       );
     }
   }
@@ -414,169 +345,160 @@ function substitute(
   appendEvent(
     next,
     "SUBSTITUTION",
-    `${playerDefinition(incomingId).shortName} replaced ${playerDefinition(outgoingId).shortName} in ${slot.toUpperCase()}.`,
+    `${playerDefinition(incomingId).shortName} replaces ${playerDefinition(outgoingId).shortName} in ${slot.toUpperCase()}.`,
   );
   resolveEntryEffect(next, incomingId);
-  resolveOnIceSynergy(next);
   next.puck.handoffProtected = false;
-
-  const exhaustedActive = activeIds(next).some(
-    (id) => next.players[id].stamina <= 0,
-  );
-  if (!exhaustedActive) next.dangerRemainingMs = null;
-  checkFailure(next);
   assertValidState(next);
   return next;
 }
 
-function advanceClock(state: GameState, elapsedMs: number): GameState {
-  const next = cloneState(state);
-  const safeElapsed = clamp(elapsedMs, 0, 5_000);
-  const seconds = safeElapsed / 1_000;
-  next.elapsedMs += safeElapsed;
-
-  for (const id of Object.keys(next.players)) {
-    next.players[id].reentryLockMs = Math.max(
-      0,
-      next.players[id].reentryLockMs - safeElapsed,
-    );
-  }
-  for (const id of activeIds(next)) {
-    next.players[id].stamina = roundEngineValue(
-      clamp(
-        next.players[id].stamina - ACTIVE_STAMINA_DRAIN_PER_SECOND * seconds,
-        0,
-        playerDefinition(id).maxStamina,
-      ),
-    );
-  }
-
-  next.pressure = roundEngineValue(
-    clamp(next.pressure + PRESSURE_GAIN_PER_SECOND * seconds, 0, 100),
+function applyFlareDiscipline(state: GameState): void {
+  const flareId = activeIds(state).find(
+    (id) => playerDefinition(id).role === "Sniper",
   );
-  next.momentum += Math.round(PHASE_DRIP_PER_SECOND[next.puck.phase] * seconds);
-  appendEvent(next, "CLOCK_ADVANCED", `The play advanced ${safeElapsed} ms.`);
+  if (!flareId || isPenalized(state, flareId)) return;
+  const flare = state.players[flareId];
+  flare.discipline = clamp(
+    flare.discipline + FLARE_DISCIPLINE_PER_CYCLE,
+    0,
+    100,
+  );
+  if (flare.discipline < 100) return;
+  state.penalty = { playerId: flareId, actionsRemaining: PENALTY_ACTIONS };
+  appendEvent(
+    state,
+    "PENALTY",
+    `${playerDefinition(flareId).shortName} took a penalty. Finish is short-handed for ${PENALTY_ACTIONS} actions.`,
+  );
+}
 
-  if (next.pressure >= 100) {
-    checkFailure(next);
+function completeAction(state: GameState): void {
+  for (const runtime of Object.values(state.players)) {
+    runtime.reentryLockActions = Math.max(0, runtime.reentryLockActions - 1);
+  }
+  advancePenalty(state);
+}
+
+function cycle(state: GameState): GameState {
+  const next = cloneState(state);
+  if (next.puck.state === "loose" || next.puck.zone !== "offensive") {
+    appendEvent(
+      next,
+      "RULE_REJECTED",
+      "Cycle requires controlled offensive-zone possession.",
+    );
+    return next;
+  }
+  const playmakerId = activePlayerWithRole(next, "Playmaker");
+  if (!playmakerId || isPenalized(next, playmakerId)) {
+    raiseThreat(
+      next,
+      18,
+      "The defence closes: no Playmaker is available for the cycle.",
+    );
+    return next;
+  }
+
+  if (next.puck.state === "chance") {
+    resetDefence(next);
+    next.puck.state = "controlled";
+    raiseThreat(
+      next,
+      20,
+      "The defence recovered its shape while the play was extended.",
+    );
+    applyFlareDiscipline(next);
+    completeAction(next);
     assertValidState(next);
     return next;
   }
 
-  const exhaustedIds = activeIds(next).filter(
-    (id) => next.players[id].stamina <= 0,
+  const previousLane = next.puck.lane;
+  const targetLane = oppositeLane(previousLane);
+  next.puck.lane = targetLane;
+  next.puck.holderId = playmakerId;
+  next.puck.state = "chance";
+  next.defence.coverage[previousLane] = "open";
+  next.defence.coverage[targetLane] = "pulled";
+  next.defence.goalie = "moving";
+  raiseThreat(
+    next,
+    12,
+    `${playerDefinition(playmakerId).shortName} sends a cross-ice pass: the goalie is moving and the ${targetLane} defender is pulled out.`,
   );
-  if (exhaustedIds.length > 0) {
-    if (next.dangerRemainingMs === null) {
-      next.dangerRemainingMs = DANGER_WINDOW_MS;
-      appendEvent(
-        next,
-        "DANGER",
-        `${playerDefinition(exhaustedIds[0]).shortName} is exhausted: 600 ms to substitute or shoot.`,
-      );
-    } else {
-      next.dangerRemainingMs -= safeElapsed;
-      if (next.dangerRemainingMs <= 0) {
-        applyTurnover(
-          next,
-          `Turnover: ${playerDefinition(exhaustedIds[0]).shortName} exhausted before the line changed.`,
-        );
-      }
-    }
-  } else {
-    next.dangerRemainingMs = null;
-  }
+  applyFlareDiscipline(next);
+  completeAction(next);
+  assertValidState(next);
+  return next;
+}
 
+function resetPlay(state: GameState): GameState {
+  const next = cloneState(state);
+  next.puck = {
+    holderId: activePlayerWithRole(next, "Retriever"),
+    zone: "neutral",
+    lane: "left",
+    state: activePlayerWithRole(next, "Retriever") ? "controlled" : "loose",
+    handoffProtected: false,
+  };
+  resetDefence(next);
+  next.counterThreat = clamp(next.counterThreat - 18, 0, MAX_COUNTER_THREAT);
+  appendEvent(
+    next,
+    "RESET",
+    "The line resets to a safe neutral-zone shape. The defence is set again.",
+  );
+  completeAction(next);
   assertValidState(next);
   return next;
 }
 
 export function previewShot(state: GameState): ShotPreview {
-  const quality = PHASE_QUALITY[state.puck.phase];
-  const shotQuality = Math.round(state.momentum * quality);
-  const netQuality = Math.max(0, shotQuality - state.goalieComposure);
-  const chancePercent = roundEngineValue(
-    clamp(
-      (netQuality / GOAL_CHANCE_SCALE) * 100,
-      MINIMUM_GOAL_CHANCE,
-      MAXIMUM_GOAL_CHANCE,
-    ),
-  );
+  const sniperId = activePlayerWithRole(state, "Sniper");
+  const factors = [
+    {
+      label: "Offensive-zone possession",
+      active: state.puck.zone === "offensive",
+    },
+    {
+      label: "Shooting lane not covered",
+      active: state.defence.coverage[state.puck.lane] !== "covered",
+    },
+    {
+      label: "Goalie moving or screened",
+      active: state.defence.goalie !== "set",
+    },
+    { label: "Net-front screen", active: state.defence.goalie === "screened" },
+    {
+      label: "Sniper available in Finish",
+      active: sniperId !== null && !isPenalized(state, sniperId),
+    },
+  ] as const;
+  const rating = factors.filter((factor) => factor.active).length;
+  const result = rating >= 5 ? "goal" : "save";
   return {
-    quality,
-    shotQuality,
-    goalieComposure: state.goalieComposure,
-    chancePercent,
-    factors: [
-      `${state.puck.phase.replaceAll("-", " ")} quality ${Math.round(quality * 100)}%`,
-      `goalie composure −${state.goalieComposure.toLocaleString()}`,
-    ],
-    formula: `${state.momentum.toLocaleString()} × ${quality.toFixed(2)} − ${state.goalieComposure.toLocaleString()} → ${chancePercent.toFixed(1)}% goal chance`,
+    rating,
+    result,
+    factors,
+    summary:
+      result === "goal"
+        ? "The route has fully exposed the net. SHOOT scores."
+        : `The goalie still has the read. You need ${5 - rating} more opening${5 - rating === 1 ? "" : "s"} before this shot beats them.`,
   };
-}
-
-function roll(state: GameState): number {
-  state.rngState = (Math.imul(state.rngState, 1_664_525) + 1_013_904_223) >>> 0;
-  return roundEngineValue((state.rngState / 0x1_0000_0000) * 100);
 }
 
 function shoot(state: GameState): GameState {
   const next = cloneState(state);
   const preview = previewShot(next);
-  const rollPercent = roll(next);
-  const goal = rollPercent < preview.chancePercent;
-  if (goal) next.teamGoals += 1;
-  next.lastShot = {
-    goal,
-    chancePercent: preview.chancePercent,
-    rollPercent,
-    shotQuality: preview.shotQuality,
-    goalieComposure: preview.goalieComposure,
-  };
-  next.lastShiftOutcome = goal ? "goal" : "save";
-  next.momentum = 0;
-  next.status =
-    next.shiftNumber >= next.maximumShifts
-      ? "period-complete"
-      : "shot-resolved";
-  next.dangerRemainingMs = null;
+  next.status = preview.result;
+  next.lastShiftOutcome = preview.result;
   appendEvent(
     next,
     "SHOT",
-    goal
-      ? `GOAL: ${preview.chancePercent.toFixed(1)}% chance beat the goalie (roll ${rollPercent.toFixed(1)}).`
-      : `SAVE: ${preview.chancePercent.toFixed(1)}% chance was stopped (roll ${rollPercent.toFixed(1)}).`,
-  );
-  assertValidState(next);
-  return next;
-}
-
-function nextShift(state: GameState): GameState {
-  if (state.status !== "shot-resolved" && state.status !== "turnover") {
-    return state;
-  }
-  const next = cloneState(state);
-  next.shiftNumber += 1;
-  next.status = "playing";
-  next.lastShiftOutcome = null;
-  next.lastShot = null;
-  next.pressure = 0;
-  next.momentum = 0;
-  next.puck = {
-    holderId: null,
-    phase: "loose-puck",
-    handoffProtected: false,
-  };
-  next.dangerRemainingMs = null;
-  next.elapsedMs = 0;
-  for (const [id, runtime] of Object.entries(next.players)) {
-    runtime.stamina = playerDefinition(id).maxStamina;
-    runtime.reentryLockMs = 0;
-  }
-  appendEvent(
-    next,
-    "SHIFT_STARTED",
-    `Shift ${next.shiftNumber} started with a loose puck.`,
+    preview.result === "goal"
+      ? "GOAL: the exposed lane, moving goalie, screen, and finish all connected."
+      : "SAVE: the goalie still had enough structure in front of them.",
   );
   assertValidState(next);
   return next;
@@ -584,25 +506,21 @@ function nextShift(state: GameState): GameState {
 
 export function reduceGame(state: GameState, action: GameAction): GameState {
   if (action.type === "RESTART") return createInitialGame();
-  if (action.type === "NEXT_SHIFT") return nextShift(state);
   if (state.status !== "playing") return state;
-
   switch (action.type) {
     case "SUBSTITUTE":
       return substitute(state, action.incomingId, action.slot);
-    case "ADVANCE_CLOCK":
-      return advanceClock(state, action.elapsedMs);
+    case "CYCLE":
+      return cycle(state);
+    case "RESET_PLAY":
+      return resetPlay(state);
     case "SHOOT":
       return shoot(state);
-    default:
-      return state;
   }
 }
 
-export function periodResult(
-  state: GameState,
-): "win" | "loss" | "draw" | "in-progress" {
-  if (state.status !== "period-complete") return "in-progress";
-  if (state.teamGoals === state.opponentGoals) return "draw";
-  return state.teamGoals > state.opponentGoals ? "win" : "loss";
+export function coverageLabel(value: CoverageState): string {
+  return value === "covered"
+    ? "Covered"
+    : value[0].toUpperCase() + value.slice(1);
 }

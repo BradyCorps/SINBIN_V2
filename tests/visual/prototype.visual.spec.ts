@@ -16,7 +16,7 @@ for (const viewport of VIEWPORTS) {
       height: viewport.height,
     });
     await page.goto("/");
-    await page.waitForSelector(".prototype-stage");
+    await page.waitForSelector(".v03-stage");
 
     const overflow = await page.evaluate(() => ({
       horizontal:
@@ -28,13 +28,14 @@ for (const viewport of VIEWPORTS) {
     }));
     expect(overflow).toEqual({ horizontal: false, vertical: false });
 
-    await expect(page.locator(".line-player")).toHaveCount(3);
-    await expect(page.locator(".bench-player")).toHaveCount(3);
+    await expect(page.locator(".active-line .player-card")).toHaveCount(3);
+    await expect(page.locator(".v03-bench .player-card")).toHaveCount(3);
     await expect(page.getByRole("button", { name: /shoot/i })).toBeVisible();
-    await expect(page.locator(".chance-factors > span").nth(1)).toBeVisible();
+    await expect(page.locator(".defender-token")).toHaveCount(3);
+    await expect(page.locator(".goalie-token")).toBeVisible();
 
     const activeBoxes = await page
-      .locator(".line-player")
+      .locator(".active-line .player-card")
       .evaluateAll((cards) =>
         cards.map((card) => {
           const rect = card.getBoundingClientRect();
@@ -63,20 +64,15 @@ test("substitution and shoot are playable through tap controls", async ({
   await page.setViewportSize({ width: 844, height: 390 });
   await page.goto("/");
 
-  await page.getByRole("button", { name: /Rook Bell/ }).click();
-  await page.getByRole("button", { name: /^Recover:/ }).click();
-  await expect(page.getByText("Controlled", { exact: true })).toHaveClass(
-    /current/,
-  );
-
   await page.getByRole("button", { name: /Jet Larsson/ }).click();
-  await page.getByRole("button", { name: /^Recover:/ }).click();
-  await expect(page.getByText("Shot ready", { exact: true })).toHaveClass(
-    /current/,
-  );
+  await page.getByRole("button", { name: /Rook Bell.*Recover/ }).click();
+  await page.getByRole("button", { name: /cycle/i }).click();
+  await expect(page.locator(".goalie-token")).toHaveClass(/moving/);
+
+  await page.getByRole("button", { name: /Ridge Mercer/ }).click();
+  await page.getByRole("button", { name: /Jet Larsson.*Recover/ }).click();
+  await expect(page.locator(".goalie-token")).toHaveClass(/screened/);
 
   await page.getByRole("button", { name: /shoot/i }).click();
-  await expect(
-    page.getByRole("dialog").getByText(/^(GOAL|SAVE)$/),
-  ).toBeVisible();
+  await expect(page.getByRole("dialog").getByText(/^GOAL$/)).toBeVisible();
 });

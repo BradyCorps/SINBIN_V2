@@ -88,14 +88,14 @@ export const PLAYER_DEFINITIONS: Record<PlayerId, PlayerDefinition> = {
 };
 
 export const INITIAL_ACTIVE: Record<ActiveSlot, PlayerId> = {
-  recover: "ridge",
+  recover: "rook",
   create: "lane",
   finish: "flare",
 };
 
 export const INITIAL_BENCH: [PlayerId, PlayerId, PlayerId] = [
-  "rook",
   "jet",
+  "ridge",
   "hatch",
 ];
 
