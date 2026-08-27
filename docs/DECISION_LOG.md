@@ -63,3 +63,14 @@ Coach Lab presentation. It uses a deterministic single-shift formation: visible
 lane coverage, visible goalie state, a cross-ice route, and one Flare
 discipline/SINBIN liability. This is a mechanics test, not an alpha feature
 commitment.
+
+## 2026-08-27 — V0.4 makes a turnover playable
+
+An immediate failed-shift result did not test hockey's possession rhythm. V0.4
+therefore turns an overextended attack into one visible AI counterattack:
+left-lane carry, cross-ice pass, then net-front chance. A defensive stop returns
+the puck to neutral; failure concedes a goal against.
+
+This is a core-loop change, not a V0.31 presentation adjustment. It also gives
+Flare a concrete trade-off: a superior finisher cannot solve the immediate
+defensive puck-pressure problem.

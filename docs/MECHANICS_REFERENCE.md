@@ -1,91 +1,55 @@
 # Mechanics Reference
 
-**Status:** V0.2 foundation. Tuning values are intentionally provisional.
+**Status:** V0.4 rectangle gate. All values and routes are deliberate test
+fixtures, not production balance.
 
 ## Shift shape
 
-- Six players: three active and three on the bench.
-- Active slots: Recover, Create, and Finish.
-- Five shifts form one period test.
-- The player and opponent each have a visible goal total. There is no arbitrary
-  Momentum target.
-- The opponent owns visible goalie composure and defensive structure. The first
-  V0.2 rectangle slice exposes goalie composure; opponent archetypes follow.
+- Six players: three active, three on the bench.
+- Active slots: Recover, Create, Finish.
+- One deterministic shift; no passive Momentum, score target, timer, Coach Lab,
+  stick rules, drafting, or progression.
+- A shift moves between **Attack** and **Defend**. A goal, goal against, or dead
+  shot ends the test.
 
-## Play progression
+## Attack
 
-```text
-LOOSE PUCK → CONTROLLED → ZONE ENTRY → SCORING SETUP → SHOT READY
-```
-
-Major Momentum is awarded when a role advances this state. A compatible player
-already on the ice may complete the next link automatically; for example, a
-Playmaker can convert a zone entry into a setup and a Sniper in Finish can make
-that setup shot-ready.
-
-## Resolution order for substitution
-
-1. Validate the incoming bench player and re-entry lock.
-2. Resolve the outgoing player's Exit effect.
-3. Move the outgoing player to the bench and the incoming player to the slot.
-4. Transfer or loosen the puck according to the Exit result.
-5. Resolve the incoming player's Entry effect.
-6. Resolve on-ice role synergies in order.
-7. Apply substitution Pressure and validate game invariants.
-
-## Continuous constraints
-
-- Active players lose 4 Stamina per second.
-- Opponent Pressure gains 3 per second.
-- Substitution adds 4 Pressure before role effects.
-- A player reaching zero Stamina opens a 600 ms danger window.
-- Substituting that player or shooting during the window is legal.
-- Expiring the danger window causes a turnover.
-- Pressure reaching 100 causes an immediate turnover.
-- A removed player has a 2,000 ms re-entry lock.
-
-## SHOOT and goals
-
-Momentum never becomes the score directly. It produces a transparent chance to
-score a goal. The shot result uses seeded randomness: repeating the same actions
-from the same initial state produces the same result.
+The first route remains:
 
 ```text
-shot quality = round(unbanked Momentum × play-state quality)
-goal chance = clamp((shot quality − goalie composure) / chance scale, 5%, 95%)
-goal if seeded shot roll < goal chance
+Jet entry → Lane cross-ice cycle → Ridge screen → Flare finish
 ```
 
-| Play state    | Quality |
-| ------------- | ------: |
-| Loose puck    |    0.20 |
-| Controlled    |    0.40 |
-| Zone entry    |    0.60 |
-| Scoring setup |    0.82 |
-| Shot ready    |    1.00 |
+Each step changes a visible opponent lane or goalie state. A shot has five
+transparent factors and is deterministic: all five produce a goal; an incomplete
+route is a save/dead play.
 
-The UI shows the chance, the factors that created it, and the result explanation.
-A save is an understandable hockey result, not a hidden score penalty.
+## Turnover and counterattack
 
-Shooting ends the current shift. A pressure collapse concedes a goal against and
-ends the current shift. The next shift begins with the same six-player
-arrangement and refreshed prototype Stamina.
+Extending an existing chance is a turnover, not passive value farming. The AI
+receives the puck and runs one readable route:
 
-## Coach Mode
+```text
+Left-lane carry → cross-ice right pass → slot / net-front chance
+```
 
-Coach Mode will use a finite decision economy rather than a manual clock. Each
-decision point presents a hockey situation—loose puck, forecheck, controlled
-entry, scoring setup, or threatened player—and the opponent answers meaningful
-actions. It shares puck state, roles, substitutions, sticks, shot calculation,
-and discipline rules with Live.
+The player can use the same active line and bench to respond:
 
-## Sticks and discipline
+| Defensive action | Requirement                 | Result                                   |
+| ---------------- | --------------------------- | ---------------------------------------- |
+| Pressure puck    | Grinder or Disruptor active | Immediate takeaway; puck returns neutral |
+| Close right      | A non-Sniper active         | Intercepts the first cross-ice pass      |
+| Close slot       | A non-Sniper active         | Intercepts the net-front feed            |
+| Clear net front  | Grinder or Retriever active | Clears the final crease chance           |
 
-Each player will have one Stick slot. A Stick is primarily a route modifier: it
-may preserve a handoff, sustain a screen, alter a pass route, or trade safety for
-upside. Generic percentage bonuses are secondary tuning only.
+A failed pressure advances the AI route. Closing the wrong lane also advances
+the route. Failing to clear the net-front chance is a goal against.
 
-Some players will accumulate visible Discipline risk while they remain in a
-dangerous or high-impact state. Crossing an explicit threshold sends that player
-to the SINBIN for a defined duration and creates a short-handed problem. This is
-a planned V0.2 system, not yet enabled in the initial goal-model slice.
+## Role liability
+
+Flare is a strong finishing specialist but cannot pressure the puck or close a
+passing lane alone. During a turnover, the player must decide whether the
+offensive upside of leaving Flare out is worth a weaker defensive response.
+
+Discipline is displayed in the lab but the complete short-handed penalty system
+is intentionally deferred. V0.4 proves the underlying defensive liability first.

@@ -68,7 +68,16 @@ export interface PenaltyState {
   actionsRemaining: number;
 }
 
-export type ShiftStatus = "playing" | "goal" | "save" | "breakdown";
+export type ShiftPhase = "attack" | "defend";
+export type CounterattackRoute = "carry" | "cross-ice" | "net-front";
+
+export interface CounterattackState {
+  route: CounterattackRoute;
+  puckLane: Lane;
+  blockedLane: Lane | null;
+}
+
+export type ShiftStatus = "playing" | "goal" | "goal-against" | "breakdown";
 export type ShiftOutcome = Exclude<ShiftStatus, "playing"> | null;
 
 export interface ShotPreview {
@@ -88,6 +97,9 @@ export interface GameEvent {
     | "ROUTE"
     | "DEFENCE_RESPONSE"
     | "PENALTY"
+    | "TURNOVER"
+    | "COUNTERATTACK"
+    | "DEFENSIVE_STOP"
     | "SHOT"
     | "RESET"
     | "RULE_REJECTED";
@@ -100,6 +112,8 @@ export interface GameState {
   players: Record<PlayerId, PlayerRuntime>;
   puck: PuckState;
   defence: DefenceState;
+  phase: ShiftPhase;
+  counterattack: CounterattackState | null;
   counterThreat: number;
   penalty: PenaltyState | null;
   status: ShiftStatus;
@@ -112,5 +126,8 @@ export type GameAction =
   | { type: "SUBSTITUTE"; incomingId: PlayerId; slot: ActiveSlot }
   | { type: "CYCLE" }
   | { type: "RESET_PLAY" }
+  | { type: "PRESSURE_PUCK" }
+  | { type: "CLOSE_LANE"; lane: Lane }
+  | { type: "CLEAR_NET_FRONT" }
   | { type: "SHOOT" }
   | { type: "RESTART" };

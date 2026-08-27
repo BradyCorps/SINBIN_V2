@@ -18,3 +18,7 @@ export function exposedNetScenario(): GameState {
     slot: "recover",
   });
 }
+
+export function counterattackScenario(): GameState {
+  return reduceGame(crossIceChanceScenario(), { type: "CYCLE" });
+}

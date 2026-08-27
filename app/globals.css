@@ -249,6 +249,9 @@ button:focus-visible {
   font-size: 14px;
   text-transform: capitalize;
 }
+.rink-header--defend > div {
+  background: #3b232b !important;
+}
 .goalie-state--set {
   color: #d6d5ca;
 }
@@ -287,6 +290,13 @@ button:focus-visible {
   font-weight: 900;
   letter-spacing: 0.2em;
   text-align: center;
+}
+.defence-board--counterattack {
+  background: linear-gradient(180deg, #563139, #3b222b 62%, #1f1720 62%);
+}
+.defence-board--counterattack::before {
+  content: "OPPONENT COUNTERATTACK";
+  color: rgba(255, 202, 184, 0.72);
 }
 .rink-lane {
   position: relative;
@@ -338,6 +348,42 @@ button:focus-visible {
   color: var(--green);
   background: #25483e;
   opacity: 0.82;
+}
+.counter-token {
+  z-index: 2;
+  display: grid;
+  width: 124px;
+  height: 68px;
+  place-content: center;
+  gap: 4px;
+  border: 2px dashed #c98b7b;
+  border-radius: 7px;
+  color: #edc3b7;
+  text-align: center;
+  background: rgba(70, 32, 39, 0.72);
+  opacity: 0.68;
+}
+.counter-token span {
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+.counter-token strong {
+  font-size: 14px;
+  text-transform: uppercase;
+}
+.counter-token--puck {
+  border-style: solid;
+  border-color: #ff876b;
+  color: #ffd0c5;
+  opacity: 1;
+  box-shadow: 0 0 0 7px rgba(255, 116, 88, 0.14);
+}
+.counter-token--closed {
+  border-color: var(--blue);
+  color: var(--blue);
+  background: #244754;
+  opacity: 1;
 }
 .puck-token {
   position: absolute;

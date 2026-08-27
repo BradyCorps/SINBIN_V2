@@ -76,3 +76,23 @@ test("substitution and shoot are playable through tap controls", async ({
   await page.getByRole("button", { name: /shoot/i }).click();
   await expect(page.getByRole("dialog").getByText(/^GOAL$/)).toBeVisible();
 });
+
+test("an overextended attack becomes a counterattack that Hatch can stop", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.goto("/");
+
+  await page.getByRole("button", { name: /Jet Larsson/ }).click();
+  await page.getByRole("button", { name: /Rook Bell.*Recover/ }).click();
+  await page.getByRole("button", { name: /cycle/i }).click();
+  await page.getByRole("button", { name: /cycle/i }).click();
+  await expect(page.locator(".defence-board--counterattack")).toBeVisible();
+
+  await page.getByRole("button", { name: /Hatch Vale/ }).click();
+  await page.getByRole("button", { name: /Flare Kovac.*Finish/ }).click();
+  await page.getByRole("button", { name: /pressure puck/i }).click();
+  await expect(
+    page.getByText("INTERCEPTION").or(page.getByText("TAKEAWAY")),
+  ).toBeVisible();
+});

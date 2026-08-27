@@ -69,6 +69,121 @@ function resetDefence(state: GameState): void {
   state.defence.goalie = "set";
 }
 
+function returnToNeutral(state: GameState, message: string): void {
+  const retrieverId = activePlayerWithRole(state, "Retriever");
+  state.phase = "attack";
+  state.counterattack = null;
+  state.puck = {
+    holderId: retrieverId,
+    zone: "neutral",
+    lane: "left",
+    state: retrieverId ? "controlled" : "loose",
+    handoffProtected: false,
+  };
+  resetDefence(state);
+  state.counterThreat = 0;
+  appendEvent(state, "DEFENSIVE_STOP", message);
+}
+
+function startCounterattack(state: GameState, reason: string): void {
+  state.phase = "defend";
+  state.counterattack = {
+    route: "carry",
+    puckLane: "left",
+    blockedLane: null,
+  };
+  state.puck = {
+    holderId: null,
+    zone: "neutral",
+    lane: "left",
+    state: "loose",
+    handoffProtected: false,
+  };
+  state.counterThreat = clamp(state.counterThreat + 20, 0, MAX_COUNTER_THREAT);
+  appendEvent(
+    state,
+    "TURNOVER",
+    `${reason} The opponent counterattacks up the left lane.`,
+  );
+}
+
+function activeHasDefender(state: GameState): boolean {
+  return activeIds(state).some((id) => {
+    const role = playerDefinition(id).role;
+    return !isPenalized(state, id) && role !== "Sniper";
+  });
+}
+
+function activeHasRole(state: GameState, ...roles: PlayerRole[]): boolean {
+  return activeIds(state).some(
+    (id) =>
+      !isPenalized(state, id) && roles.includes(playerDefinition(id).role),
+  );
+}
+
+function concedeCounterattack(state: GameState): void {
+  state.status = "goal-against";
+  state.lastShiftOutcome = "goal-against";
+  appendEvent(
+    state,
+    "COUNTERATTACK",
+    "GOAL AGAINST: the net-front route was not cleared in time.",
+  );
+}
+
+function advanceCounterattack(state: GameState): void {
+  const attack = state.counterattack;
+  if (!attack) return;
+
+  if (attack.route === "carry") {
+    if (attack.blockedLane === "right") {
+      returnToNeutral(
+        state,
+        "INTERCEPTION: the right passing lane was closed before the cross-ice pass.",
+      );
+      return;
+    }
+    attack.route = "cross-ice";
+    attack.puckLane = "right";
+    state.counterThreat = clamp(
+      state.counterThreat + 25,
+      0,
+      MAX_COUNTER_THREAT,
+    );
+    appendEvent(
+      state,
+      "COUNTERATTACK",
+      "The opponent crosses the puck to the right lane. The slot is the next danger.",
+    );
+    return;
+  }
+
+  if (attack.route === "cross-ice") {
+    if (attack.blockedLane === "slot") {
+      returnToNeutral(
+        state,
+        "INTERCEPTION: the slot was sealed before the net-front feed arrived.",
+      );
+      return;
+    }
+    attack.route = "net-front";
+    attack.puckLane = "slot";
+    state.counterThreat = clamp(
+      state.counterThreat + 30,
+      0,
+      MAX_COUNTER_THREAT,
+    );
+    appendEvent(
+      state,
+      "COUNTERATTACK",
+      "Net-front chance: clear the crease now or the opponent scores.",
+    );
+    return;
+  }
+
+  concedeCounterattack(state);
+}
+
 function advancePenalty(state: GameState): void {
   if (!state.penalty) return;
   state.penalty.actionsRemaining -= 1;
@@ -100,6 +215,12 @@ function assertValidState(state: GameState): void {
       throw new Error(`Missing defensive coverage for ${lane}.`);
     }
   }
+  if (state.phase === "defend" && !state.counterattack) {
+    throw new Error("Defend phase requires an active counterattack.");
+  }
+  if (state.phase === "attack" && state.counterattack) {
+    throw new Error("Attack phase cannot retain a counterattack.");
+  }
 }
 
 export function createInitialGame(): GameState {
@@ -126,6 +247,8 @@ export function createInitialGame(): GameState {
       forecheck: "active",
       goalie: "set",
     },
+    phase: "attack",
+    counterattack: null,
     counterThreat: 0,
     penalty: null,
     status: "playing",
@@ -382,6 +505,14 @@ function completeAction(state: GameState): void {
 
 function cycle(state: GameState): GameState {
   const next = cloneState(state);
+  if (next.phase !== "attack") {
+    appendEvent(
+      next,
+      "RULE_REJECTED",
+      "You cannot cycle while the opponent has possession.",
+    );
+    return next;
+  }
   if (next.puck.state === "loose" || next.puck.zone !== "offensive") {
     appendEvent(
       next,
@@ -401,14 +532,10 @@ function cycle(state: GameState): GameState {
   }
 
   if (next.puck.state === "chance") {
-    resetDefence(next);
-    next.puck.state = "controlled";
-    raiseThreat(
+    startCounterattack(
       next,
-      20,
-      "The defence recovered its shape while the play was extended.",
+      "TURNOVER: the extra cycle was read and the defence recovered the puck.",
     );
-    applyFlareDiscipline(next);
     completeAction(next);
     assertValidState(next);
     return next;
@@ -435,6 +562,14 @@ function cycle(state: GameState): GameState {
 
 function resetPlay(state: GameState): GameState {
   const next = cloneState(state);
+  if (next.phase !== "attack") {
+    appendEvent(
+      next,
+      "RULE_REJECTED",
+      "Protect and reset are unavailable during a counterattack.",
+    );
+    return next;
+  }
   next.puck = {
     holderId: activePlayerWithRole(next, "Retriever"),
     zone: "neutral",
@@ -449,6 +584,87 @@ function resetPlay(state: GameState): GameState {
     "RESET",
     "The line resets to a safe neutral-zone shape. The defence is set again.",
   );
+  completeAction(next);
+  assertValidState(next);
+  return next;
+}
+
+function pressurePuck(state: GameState): GameState {
+  const next = cloneState(state);
+  if (next.phase !== "defend" || !next.counterattack) {
+    appendEvent(
+      next,
+      "RULE_REJECTED",
+      "Pressure is only available while defending a counterattack.",
+    );
+    return next;
+  }
+  if (activeHasRole(next, "Disruptor", "Grinder")) {
+    returnToNeutral(
+      next,
+      "TAKEAWAY: your defensive specialist stripped the puck carrier before the pass.",
+    );
+  } else {
+    appendEvent(
+      next,
+      "COUNTERATTACK",
+      "Flare cannot pressure the puck effectively. The counterattack continues.",
+    );
+    advanceCounterattack(next);
+  }
+  completeAction(next);
+  assertValidState(next);
+  return next;
+}
+
+function closeLane(state: GameState, lane: Lane): GameState {
+  const next = cloneState(state);
+  if (next.phase !== "defend" || !next.counterattack) {
+    appendEvent(
+      next,
+      "RULE_REJECTED",
+      "Close a lane only while defending a counterattack.",
+    );
+    return next;
+  }
+  if (!activeHasDefender(next)) {
+    appendEvent(
+      next,
+      "RULE_REJECTED",
+      "A Sniper-only line cannot close the passing lane.",
+    );
+    return next;
+  }
+  next.counterattack.blockedLane = lane;
+  appendEvent(
+    next,
+    "COUNTERATTACK",
+    `Your line closes the ${lane} lane and forces the opponent's next read.`,
+  );
+  advanceCounterattack(next);
+  completeAction(next);
+  assertValidState(next);
+  return next;
+}
+
+function clearNetFront(state: GameState): GameState {
+  const next = cloneState(state);
+  if (next.phase !== "defend" || next.counterattack?.route !== "net-front") {
+    appendEvent(
+      next,
+      "RULE_REJECTED",
+      "Clear the crease only when the net-front chance is live.",
+    );
+    return next;
+  }
+  if (activeHasRole(next, "Grinder", "Retriever")) {
+    returnToNeutral(
+      next,
+      "CLEAR: the crease battle is won and the puck is moved safely to neutral ice.",
+    );
+  } else {
+    concedeCounterattack(next);
+  }
   completeAction(next);
   assertValidState(next);
   return next;
@@ -490,15 +706,23 @@ export function previewShot(state: GameState): ShotPreview {
 
 function shoot(state: GameState): GameState {
   const next = cloneState(state);
+  if (next.phase !== "attack") {
+    appendEvent(
+      next,
+      "RULE_REJECTED",
+      "You cannot shoot while defending a counterattack.",
+    );
+    return next;
+  }
   const preview = previewShot(next);
-  next.status = preview.result;
-  next.lastShiftOutcome = preview.result;
+  next.status = preview.result === "goal" ? "goal" : "breakdown";
+  next.lastShiftOutcome = next.status;
   appendEvent(
     next,
     "SHOT",
     preview.result === "goal"
       ? "GOAL: the exposed lane, moving goalie, screen, and finish all connected."
-      : "SAVE: the goalie still had enough structure in front of them.",
+      : "SAVE: the goalie still had enough structure in front of them. The play is dead.",
   );
   assertValidState(next);
   return next;
@@ -514,6 +738,12 @@ export function reduceGame(state: GameState, action: GameAction): GameState {
       return cycle(state);
     case "RESET_PLAY":
       return resetPlay(state);
+    case "PRESSURE_PUCK":
+      return pressurePuck(state);
+    case "CLOSE_LANE":
+      return closeLane(state, action.lane);
+    case "CLEAR_NET_FRONT":
+      return clearNetFront(state);
     case "SHOOT":
       return shoot(state);
   }

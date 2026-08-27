@@ -11,7 +11,7 @@ const routeToChance: GameAction[] = [
   { type: "CYCLE" },
 ];
 
-describe("SINBIN V0.3 defensive structure lab", () => {
+describe("SINBIN V0.4 counterattack rectangle lab", () => {
   it("starts with a visible set defence and controlled neutral-zone puck", () => {
     const state = createInitialGame();
     expect(state.active).toEqual({
@@ -69,37 +69,31 @@ describe("SINBIN V0.3 defensive structure lab", () => {
     expect(reduceGame(next, { type: "SHOOT" }).status).toBe("goal");
   });
 
-  it("shooting before the screen is a deterministic save with a reason", () => {
+  it("shooting before the screen is a dead-play breakdown with a reason", () => {
     const next = apply(createInitialGame(), routeToChance);
     const preview = previewShot(next);
     expect(preview.rating).toBe(4);
     expect(preview.result).toBe("save");
-    expect(reduceGame(next, { type: "SHOOT" }).status).toBe("save");
+    expect(reduceGame(next, { type: "SHOOT" }).status).toBe("breakdown");
   });
 
-  it("extending a chance lets the defence recover instead of farming value", () => {
+  it("overextending a chance hands the puck to a visible AI counterattack", () => {
     const next = apply(createInitialGame(), [
       ...routeToChance,
       { type: "CYCLE" },
     ]);
-    expect(next.puck.state).toBe("controlled");
-    expect(next.defence.goalie).toBe("set");
-    expect(next.defence.coverage).toEqual({
-      left: "covered",
-      slot: "covered",
-      right: "covered",
+    expect(next.phase).toBe("defend");
+    expect(next.counterattack).toMatchObject({
+      route: "carry",
+      puckLane: "left",
     });
-    expect(next.counterThreat).toBeGreaterThan(20);
+    expect(next.eventLog.at(-1)?.type).toBe("TURNOVER");
   });
 
-  it("Flare eventually takes a visible SINBIN penalty when the play is overextended", () => {
-    const next = apply(createInitialGame(), [
-      ...routeToChance,
-      { type: "CYCLE" },
-    ]);
-    expect(next.penalty).toMatchObject({ playerId: "flare" });
-    expect(next.eventLog.some((event) => event.type === "PENALTY")).toBe(true);
-    expect(previewShot(next).factors.at(-1)?.active).toBe(false);
+  it("Flare gains visible discipline before the overextension becomes a turnover", () => {
+    const next = apply(createInitialGame(), [...routeToChance]);
+    expect(next.players.flare.discipline).toBe(50);
+    expect(next.penalty).toBeNull();
   });
 
   it("a player cannot immediately cycle back in after being removed", () => {
@@ -115,5 +109,54 @@ describe("SINBIN V0.3 defensive structure lab", () => {
     });
     expect(rejected.active.recover).toBe("jet");
     expect(rejected.eventLog.at(-1)?.type).toBe("RULE_REJECTED");
+  });
+
+  it("Hatch turns a turnover into an immediate defensive takeaway", () => {
+    const defending = apply(createInitialGame(), [
+      ...routeToChance,
+      { type: "CYCLE" },
+      { type: "SUBSTITUTE", incomingId: "hatch", slot: "finish" },
+      { type: "PRESSURE_PUCK" },
+    ]);
+    expect(defending.phase).toBe("attack");
+    expect(defending.counterattack).toBeNull();
+    expect(defending.puck).toMatchObject({ zone: "neutral", state: "loose" });
+    expect(defending.eventLog.at(-1)?.type).toBe("DEFENSIVE_STOP");
+  });
+
+  it("closing the right lane intercepts the AI's first cross-ice pass", () => {
+    const defending = apply(createInitialGame(), [
+      ...routeToChance,
+      { type: "CYCLE" },
+      { type: "CLOSE_LANE", lane: "right" },
+    ]);
+    expect(defending.phase).toBe("attack");
+    expect(defending.counterattack).toBeNull();
+    expect(defending.eventLog.at(-1)?.message).toContain("INTERCEPTION");
+  });
+
+  it("a weak pressure response lets the AI advance to the cross-ice route", () => {
+    const defending = apply(createInitialGame(), [
+      ...routeToChance,
+      { type: "CYCLE" },
+      { type: "PRESSURE_PUCK" },
+    ]);
+    expect(defending.phase).toBe("defend");
+    expect(defending.counterattack).toMatchObject({
+      route: "cross-ice",
+      puckLane: "right",
+    });
+    expect(defending.eventLog.at(-1)?.message).toContain("slot");
+  });
+
+  it("an uncovered net-front route becomes a goal against", () => {
+    const defending = apply(createInitialGame(), [
+      ...routeToChance,
+      { type: "CYCLE" },
+      { type: "PRESSURE_PUCK" },
+      { type: "CLOSE_LANE", lane: "left" },
+      { type: "CLEAR_NET_FRONT" },
+    ]);
+    expect(defending.status).toBe("goal-against");
   });
 });
