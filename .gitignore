@@ -1,0 +1,11 @@
+.next/
+node_modules/
+storybook-static/
+coverage/
+playwright-report/
+test-results/
+.DS_Store
+*.log
+*.tsbuildinfo
+.env*
+!.env.example
