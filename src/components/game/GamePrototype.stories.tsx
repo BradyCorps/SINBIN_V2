@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
-import { shotReadyScenario } from "@/src/game/testing/scenarios";
+import { exposedNetScenario } from "@/src/game/testing/scenarios";
 import { GamePrototype } from "./GamePrototype";
 
 const meta = {
@@ -11,11 +11,10 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const TacticalOpening: Story = {};
+export const Opening: Story = {};
 
-export const LiveShotReady: Story = {
+export const ExposedNet: Story = {
   args: {
-    initialMode: "live",
-    initialState: shotReadyScenario(),
+    initialState: exposedNetScenario(),
   },
 };

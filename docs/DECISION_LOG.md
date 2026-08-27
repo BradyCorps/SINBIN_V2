@@ -50,3 +50,16 @@ equipment slot and must modify hockey grammar before they add generic numbers.
 Discipline will create visible, player-caused SINBIN risk; it is documented now
 and intentionally held from the first goal-model implementation until its
 short-handed state can be made legible.
+
+## 2026-08-27 — V0.3 resets the prototype to defensive structure
+
+V0.2 confirmed that the substitution controls are operable, but did not answer
+the rectangle gate. It presented a desktop version of the existing
+stamina-and-shoot loop without making the opponent's shape, the causal route,
+or the decision to extend intelligible.
+
+V0.3 therefore removes passive Momentum farming, five-shift targets, and the
+Coach Lab presentation. It uses a deterministic single-shift formation: visible
+lane coverage, visible goalie state, a cross-ice route, and one Flare
+discipline/SINBIN liability. This is a mechanics test, not an alpha feature
+commitment.

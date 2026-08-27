@@ -1,13 +1,14 @@
 export const ACTIVE_SLOTS = ["recover", "create", "finish"] as const;
 export type ActiveSlot = (typeof ACTIVE_SLOTS)[number];
 
+export const LANES = ["left", "slot", "right"] as const;
+export type Lane = (typeof LANES)[number];
+export type CoverageState = "covered" | "pulled" | "pinned" | "open";
+export type GoalieState = "set" | "moving" | "screened";
+
 export type PlayerId = string;
-export type LaneMode = "tactical" | "live";
 export type PlayerRole =
   "Retriever" | "Carrier" | "Playmaker" | "Sniper" | "Grinder" | "Disruptor";
-
-export type PlayPhase =
-  "loose-puck" | "controlled" | "zone-entry" | "scoring-setup" | "shot-ready";
 
 export type EntryEffectId =
   | "retrieve-puck"
@@ -35,7 +36,6 @@ export interface PlayerDefinition {
   name: string;
   shortName: string;
   role: PlayerRole;
-  secondaryRole?: PlayerRole;
   maxStamina: number;
   entryEffect: EntryEffectId;
   exitEffect: ExitEffectId;
@@ -45,40 +45,51 @@ export interface PlayerDefinition {
 
 export interface PlayerRuntime {
   stamina: number;
-  reentryLockMs: number;
+  reentryLockActions: number;
+  discipline: number;
 }
 
 export interface PuckState {
   holderId: PlayerId | null;
-  phase: PlayPhase;
+  zone: "neutral" | "offensive";
+  lane: Lane;
+  state: "loose" | "controlled" | "chance";
   handoffProtected: boolean;
 }
 
-export type ShiftStatus =
-  "playing" | "shot-resolved" | "turnover" | "period-complete";
+export interface DefenceState {
+  coverage: Record<Lane, CoverageState>;
+  forecheck: "active" | "broken";
+  goalie: GoalieState;
+}
 
-export type ShiftOutcome = "goal" | "save" | "conceded" | null;
+export interface PenaltyState {
+  playerId: PlayerId;
+  actionsRemaining: number;
+}
 
-export interface ShotResult {
-  goal: boolean;
-  chancePercent: number;
-  rollPercent: number;
-  shotQuality: number;
-  goalieComposure: number;
+export type ShiftStatus = "playing" | "goal" | "save" | "breakdown";
+export type ShiftOutcome = Exclude<ShiftStatus, "playing"> | null;
+
+export interface ShotPreview {
+  rating: number;
+  result: "goal" | "save";
+  factors: readonly { label: string; active: boolean }[];
+  summary: string;
 }
 
 export interface GameEvent {
   id: number;
   type:
     | "SHIFT_STARTED"
-    | "CLOCK_ADVANCED"
-    | "EXIT_EFFECT"
     | "SUBSTITUTION"
     | "ENTRY_EFFECT"
-    | "PLAY_ADVANCED"
-    | "DANGER"
+    | "EXIT_EFFECT"
+    | "ROUTE"
+    | "DEFENCE_RESPONSE"
+    | "PENALTY"
     | "SHOT"
-    | "TURNOVER"
+    | "RESET"
     | "RULE_REJECTED";
   message: string;
 }
@@ -88,35 +99,18 @@ export interface GameState {
   bench: [PlayerId, PlayerId, PlayerId];
   players: Record<PlayerId, PlayerRuntime>;
   puck: PuckState;
-  pressure: number;
-  momentum: number;
-  teamGoals: number;
-  opponentGoals: number;
-  goalieComposure: number;
-  shiftNumber: number;
-  maximumShifts: number;
+  defence: DefenceState;
+  counterThreat: number;
+  penalty: PenaltyState | null;
   status: ShiftStatus;
   lastShiftOutcome: ShiftOutcome;
-  lastShot: ShotResult | null;
-  rngState: number;
-  dangerRemainingMs: number | null;
-  elapsedMs: number;
   eventSequence: number;
   eventLog: GameEvent[];
 }
 
 export type GameAction =
   | { type: "SUBSTITUTE"; incomingId: PlayerId; slot: ActiveSlot }
-  | { type: "ADVANCE_CLOCK"; elapsedMs: number }
+  | { type: "CYCLE" }
+  | { type: "RESET_PLAY" }
   | { type: "SHOOT" }
-  | { type: "NEXT_SHIFT" }
   | { type: "RESTART" };
-
-export interface ShotPreview {
-  quality: number;
-  shotQuality: number;
-  goalieComposure: number;
-  chancePercent: number;
-  factors: readonly string[];
-  formula: string;
-}
