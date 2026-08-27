@@ -77,7 +77,8 @@ export function reentryLockScenario(): GameState {
 export function fifthShiftScenario(): GameState {
   const state = shotReadyScenario();
   state.shiftNumber = 5;
-  state.bankedMomentum = 8_000;
+  state.teamGoals = 1;
+  state.opponentGoals = 0;
   return state;
 }
 

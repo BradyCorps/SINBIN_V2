@@ -25,6 +25,11 @@ export type ExitEffectId =
   | "draw-coverage"
   | "release-pressure";
 
+export interface StickDefinition {
+  name: string;
+  effect: string;
+}
+
 export interface PlayerDefinition {
   id: PlayerId;
   name: string;
@@ -34,6 +39,7 @@ export interface PlayerDefinition {
   maxStamina: number;
   entryEffect: EntryEffectId;
   exitEffect: ExitEffectId;
+  stick: StickDefinition;
   accent: string;
 }
 
@@ -48,9 +54,18 @@ export interface PuckState {
   handoffProtected: boolean;
 }
 
-export type ShiftStatus = "playing" | "banked" | "turnover" | "period-complete";
+export type ShiftStatus =
+  "playing" | "shot-resolved" | "turnover" | "period-complete";
 
-export type ShiftOutcome = "banked" | "turnover" | null;
+export type ShiftOutcome = "goal" | "save" | "conceded" | null;
+
+export interface ShotResult {
+  goal: boolean;
+  chancePercent: number;
+  rollPercent: number;
+  shotQuality: number;
+  goalieComposure: number;
+}
 
 export interface GameEvent {
   id: number;
@@ -75,14 +90,15 @@ export interface GameState {
   puck: PuckState;
   pressure: number;
   momentum: number;
-  bankedMomentum: number;
-  goalieDefence: number;
-  periodTarget: number;
+  teamGoals: number;
+  opponentGoals: number;
+  goalieComposure: number;
   shiftNumber: number;
   maximumShifts: number;
   status: ShiftStatus;
   lastShiftOutcome: ShiftOutcome;
-  lastBankedAmount: number;
+  lastShot: ShotResult | null;
+  rngState: number;
   dangerRemainingMs: number | null;
   elapsedMs: number;
   eventSequence: number;
@@ -98,8 +114,9 @@ export type GameAction =
 
 export interface ShotPreview {
   quality: number;
-  grossChance: number;
-  goalieDefence: number;
-  banked: number;
+  shotQuality: number;
+  goalieComposure: number;
+  chancePercent: number;
+  factors: readonly string[];
   formula: string;
 }
