@@ -6,6 +6,9 @@ export type Lane = (typeof LANES)[number];
 export type CoverageState = "covered" | "pulled" | "pinned" | "open";
 export type GoalieState = "set" | "moving" | "screened";
 
+export type OpponentFormationId =
+  "slot-collapse" | "wide-denial" | "high-press";
+
 export type PlayerId = string;
 export type PlayerRole =
   "Retriever" | "Carrier" | "Playmaker" | "Sniper" | "Grinder" | "Disruptor";
@@ -68,7 +71,37 @@ export interface PenaltyState {
   actionsRemaining: number;
 }
 
-export type ShiftStatus = "playing" | "goal" | "save" | "breakdown";
+export type ShiftPhase = "attack" | "defend";
+
+export interface CounterRouteStep {
+  id: string;
+  label: string;
+  puckLane: Lane;
+  predictedLane: Lane | null;
+  threat: number;
+  terminal: boolean;
+}
+
+export interface OpponentFormation {
+  id: OpponentFormationId;
+  label: string;
+  weakPoint: string;
+  initialPuckLane: Lane;
+  initialDefence: DefenceState;
+  carrierLane: Lane;
+  playmakerLane: Lane;
+  carrierCreatesChance: boolean;
+  playmakerCanEnter: boolean;
+  counterRoute: readonly CounterRouteStep[];
+}
+
+export interface CounterattackState {
+  stepIndex: number;
+  puckLane: Lane;
+  contained: boolean;
+}
+
+export type ShiftStatus = "playing" | "goal" | "goal-against" | "breakdown";
 export type ShiftOutcome = Exclude<ShiftStatus, "playing"> | null;
 
 export interface ShotPreview {
@@ -88,6 +121,9 @@ export interface GameEvent {
     | "ROUTE"
     | "DEFENCE_RESPONSE"
     | "PENALTY"
+    | "TURNOVER"
+    | "COUNTERATTACK"
+    | "DEFENSIVE_STOP"
     | "SHOT"
     | "RESET"
     | "RULE_REJECTED";
@@ -95,11 +131,14 @@ export interface GameEvent {
 }
 
 export interface GameState {
+  formationId: OpponentFormationId;
   active: Record<ActiveSlot, PlayerId>;
   bench: [PlayerId, PlayerId, PlayerId];
   players: Record<PlayerId, PlayerRuntime>;
   puck: PuckState;
   defence: DefenceState;
+  phase: ShiftPhase;
+  counterattack: CounterattackState | null;
   counterThreat: number;
   penalty: PenaltyState | null;
   status: ShiftStatus;
@@ -109,8 +148,13 @@ export interface GameState {
 }
 
 export type GameAction =
+  | { type: "SELECT_FORMATION"; formationId: OpponentFormationId }
   | { type: "SUBSTITUTE"; incomingId: PlayerId; slot: ActiveSlot }
   | { type: "CYCLE" }
   | { type: "RESET_PLAY" }
+  | { type: "PRESSURE_PUCK" }
+  | { type: "FORCE_WIDE" }
+  | { type: "READ_PASS"; lane: Lane }
+  | { type: "CLEAR_NET_FRONT" }
   | { type: "SHOOT" }
   | { type: "RESTART" };
