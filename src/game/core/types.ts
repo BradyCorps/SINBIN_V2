@@ -13,6 +13,9 @@ export type PlayerId = string;
 export type PlayerRole =
   "Retriever" | "Carrier" | "Playmaker" | "Sniper" | "Grinder" | "Disruptor";
 
+export type HybridEffectId =
+  "carry-create" | "retrieve-sustain" | "disrupt-finish";
+
 export type EntryEffectId =
   | "retrieve-puck"
   | "carry-puck"
@@ -39,11 +42,18 @@ export interface PlayerDefinition {
   name: string;
   shortName: string;
   role: PlayerRole;
+  secondaryRole?: PlayerRole;
+  hybridEffect?: HybridEffectId;
   maxStamina: number;
   entryEffect: EntryEffectId;
   exitEffect: ExitEffectId;
-  stick: StickDefinition;
+  stick?: StickDefinition;
   accent: string;
+}
+
+export interface LineupDefinition {
+  active: Record<ActiveSlot, PlayerId>;
+  bench: [PlayerId, PlayerId, PlayerId];
 }
 
 export interface PlayerRuntime {
@@ -132,6 +142,7 @@ export interface GameEvent {
 
 export interface GameState {
   formationId: OpponentFormationId;
+  startingLineup: LineupDefinition;
   active: Record<ActiveSlot, PlayerId>;
   bench: [PlayerId, PlayerId, PlayerId];
   players: Record<PlayerId, PlayerRuntime>;

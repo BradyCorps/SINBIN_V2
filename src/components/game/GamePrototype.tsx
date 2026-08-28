@@ -21,7 +21,7 @@ import {
   type OpponentFormationId,
   type PlayerId,
 } from "@/src/game/core/types";
-import { playerDefinition } from "@/src/game/content/players";
+import { playerDefinition, playerRoleLabel } from "@/src/game/content/players";
 import { StageScaler } from "./StageScaler";
 
 const SLOT_LABELS: Record<ActiveSlot, string> = {
@@ -126,7 +126,7 @@ function PlayerCard({
       aria-label={`${player.name}, ${player.role}, ${location}${penalized ? ", in the SINBIN" : ""}`}
     >
       <span className="player-card__role">
-        {location} · {player.role}
+        {location} · {playerRoleLabel(id)}
       </span>
       <div className="player-card__identity">
         <i aria-hidden="true">{player.shortName.at(0)}</i>
@@ -172,9 +172,20 @@ function CounterattackToken({ lane, state }: { lane: Lane; state: GameState }) {
 export function GamePrototype({
   initialState,
   initialFormationId = "slot-collapse",
+  formationLocked = false,
+  matchDisplay,
+  onShiftResolved,
 }: {
   initialState?: GameState;
   initialFormationId?: OpponentFormationId;
+  formationLocked?: boolean;
+  matchDisplay?: {
+    shift: number;
+    totalShifts: number;
+    goalsFor: number;
+    goalsAgainst: number;
+  };
+  onShiftResolved?: (state: GameState) => void;
 }) {
   const [game, setGame] = useState<GameState>(
     () => initialState ?? createInitialGame(initialFormationId),
@@ -217,29 +228,41 @@ export function GamePrototype({
         >
           <header className="v03-header">
             <div>
-              <small>V0.5 RECTANGLE TEST</small>
+              <small>
+                {matchDisplay ? "V0.6 MATCH TEST" : "V0.5 RECTANGLE TEST"}
+              </small>
               <strong>SINBIN</strong>
               <span>Read the shape. Build a route. Defend the swing.</span>
             </div>
             <label className="formation-selector">
               <span>OPPONENT FORMATION</span>
-              <select
-                aria-label="Opponent formation"
-                value={game.formationId}
-                onChange={(event) => {
-                  dispatch({
-                    type: "SELECT_FORMATION",
-                    formationId: event.target.value as OpponentFormationId,
-                  });
-                  setSelectedBench(null);
-                }}
-              >
-                {Object.values(OPPONENT_FORMATIONS).map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+              {formationLocked ? (
+                <strong>{formation.label}</strong>
+              ) : (
+                <select
+                  aria-label="Opponent formation"
+                  value={game.formationId}
+                  onChange={(event) => {
+                    dispatch({
+                      type: "SELECT_FORMATION",
+                      formationId: event.target.value as OpponentFormationId,
+                    });
+                    setSelectedBench(null);
+                  }}
+                >
+                  {Object.values(OPPONENT_FORMATIONS).map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              )}
+              {matchDisplay && (
+                <em>
+                  SHIFT {matchDisplay.shift}/{matchDisplay.totalShifts} · GF{" "}
+                  {matchDisplay.goalsFor}–{matchDisplay.goalsAgainst} GA
+                </em>
+              )}
             </label>
             <button
               onClick={() => {
@@ -363,7 +386,7 @@ export function GamePrototype({
                 <strong>
                   {game.phase === "defend"
                     ? `${(game.counterattack?.stepIndex ?? 0) + 1}/${formation.counterRoute.length}`
-                    : `${shot.rating}/5`}
+                    : `${shot.rating}/${shot.factors.length}`}
                 </strong>
               </header>
               {game.phase === "attack"
@@ -397,7 +420,9 @@ export function GamePrototype({
             </section>
 
             <section className="player-detail">
-              <span>PLAYER DETAIL · {detail.role.toUpperCase()}</span>
+              <span>
+                PLAYER DETAIL · {playerRoleLabel(detailId).toUpperCase()}
+              </span>
               <strong>{detail.name}</strong>
               <p>
                 <b>ENTER</b> {detail.entryEffect.replaceAll("-", " ")}
@@ -405,9 +430,11 @@ export function GamePrototype({
               <p>
                 <b>EXIT</b> {detail.exitEffect.replaceAll("-", " ")}
               </p>
-              <p>
-                <b>STICK</b> {detail.stick.name} <em>parked for this test</em>
-              </p>
+              {detail.stick && (
+                <p>
+                  <b>STICK</b> {detail.stick.name} <em>parked for this test</em>
+                </p>
+              )}
             </section>
 
             <section className="lab-actions">
@@ -481,11 +508,14 @@ export function GamePrototype({
               <p>{game.eventLog.at(-1)?.message}</p>
               <button
                 onClick={() => {
-                  dispatch({ type: "RESTART" });
-                  setSelectedBench(null);
+                  if (onShiftResolved) onShiftResolved(game);
+                  else {
+                    dispatch({ type: "RESTART" });
+                    setSelectedBench(null);
+                  }
                 }}
               >
-                RUN THE TEST AGAIN
+                {onShiftResolved ? "RECORD SHIFT" : "RUN THE TEST AGAIN"}
               </button>
             </div>
           )}

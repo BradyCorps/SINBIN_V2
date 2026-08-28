@@ -8,7 +8,7 @@ const VIEWPORTS = [
 ] as const;
 
 for (const viewport of VIEWPORTS) {
-  test(`${viewport.name} landscape contains the complete stage`, async ({
+  test(`${viewport.name} landscape contains the complete roster lab`, async ({
     page,
   }) => {
     await page.setViewportSize({
@@ -16,7 +16,7 @@ for (const viewport of VIEWPORTS) {
       height: viewport.height,
     });
     await page.goto("/");
-    await page.waitForSelector(".v03-stage");
+    await page.waitForSelector(".v06-stage");
 
     const overflow = await page.evaluate(() => ({
       horizontal:
@@ -27,118 +27,120 @@ for (const viewport of VIEWPORTS) {
         document.documentElement.clientHeight,
     }));
     expect(overflow).toEqual({ horizontal: false, vertical: false });
-
-    await expect(page.locator(".active-line .player-card")).toHaveCount(3);
-    await expect(page.locator(".v03-bench .player-card")).toHaveCount(3);
-    await expect(page.getByRole("button", { name: /shoot/i })).toBeVisible();
-    await expect(page.locator(".defender-token")).toHaveCount(3);
-    await expect(page.locator(".goalie-token")).toBeVisible();
-
-    const activeBoxes = await page
-      .locator(".active-line .player-card")
-      .evaluateAll((cards) =>
-        cards.map((card) => {
-          const rect = card.getBoundingClientRect();
-          return { width: rect.width, height: rect.height };
-        }),
-      );
-    expect(
-      Math.max(...activeBoxes.map((box) => box.width)) -
-        Math.min(...activeBoxes.map((box) => box.width)),
-    ).toBeLessThanOrEqual(1);
-    expect(
-      Math.max(...activeBoxes.map((box) => box.height)) -
-        Math.min(...activeBoxes.map((box) => box.height)),
-    ).toBeLessThanOrEqual(1);
+    await expect(page.locator(".roster-card")).toHaveCount(9);
+    await expect(page.locator(".roster-card--selected")).toHaveCount(6);
+    await expect(page.locator(".scout-panel li")).toHaveCount(3);
+    await expect(
+      page.getByRole("button", { name: /start three shifts/i }),
+    ).toBeEnabled();
 
     await page.screenshot({
-      path: `test-results/${viewport.width}x${viewport.height}-opening.png`,
+      path: `test-results/${viewport.width}x${viewport.height}-v06-scouting.png`,
+      fullPage: false,
+    });
+
+    await page.getByRole("button", { name: /start three shifts/i }).click();
+    await page.waitForSelector(".v03-stage");
+    const matchOverflow = await page.evaluate(() => ({
+      horizontal:
+        document.documentElement.scrollWidth >
+        document.documentElement.clientWidth,
+      vertical:
+        document.documentElement.scrollHeight >
+        document.documentElement.clientHeight,
+    }));
+    expect(matchOverflow).toEqual({ horizontal: false, vertical: false });
+    await expect(page.getByText(/SHIFT 1\/3/)).toBeVisible();
+    await page.screenshot({
+      path: `test-results/${viewport.width}x${viewport.height}-v06-match.png`,
       fullPage: false,
     });
   });
 }
 
-test("substitution and shoot are playable through tap controls", async ({
+test("scouting changes the known three-shift formation sequence", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 844, height: 390 });
   await page.goto("/");
+  await page.getByLabel("Scout report").selectOption("crease-guard");
+  await expect(page.locator(".scout-panel li").nth(0)).toContainText(
+    "Slot Collapse",
+  );
+  await expect(page.locator(".scout-panel li").nth(1)).toContainText(
+    "Wide Denial",
+  );
+  await expect(page.locator(".scout-panel li").nth(2)).toContainText(
+    "Slot Collapse",
+  );
+});
+
+test("a specialist can be replaced by a hybrid in the same lineup slot", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.goto("/");
+  await page.getByRole("button", { name: /Flare Kovac/ }).click();
+  await expect(
+    page.getByLabel("Selected lineup").getByText("OPEN"),
+  ).toBeVisible();
+  await page.getByRole("button", { name: /Spark Ibarra/ }).click();
+  await expect(
+    page.getByLabel("Selected lineup").getByText("Spark", { exact: true }),
+  ).toBeVisible();
+  await expect(page.locator(".roster-card--selected")).toHaveCount(6);
+});
+
+test("the selected six enter a locked known formation and can score", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.goto("/");
+  await page.getByRole("button", { name: /start three shifts/i }).click();
+  await expect(page.getByText(/SHIFT 1\/3/)).toBeVisible();
+  await expect(
+    page.getByText("Wide Denial", { exact: true }).first(),
+  ).toBeVisible();
 
   await page.getByRole("button", { name: /Jet Larsson/ }).click();
   await page.getByRole("button", { name: /Rook Bell.*Recover/ }).click();
-  await page.getByRole("button", { name: /cycle/i }).click();
-  await expect(page.locator(".goalie-token")).toHaveClass(/moving/);
-
-  await page.getByRole("button", { name: /Ridge Mercer/ }).click();
-  await page.getByRole("button", { name: /Jet Larsson.*Recover/ }).click();
-  await expect(page.locator(".goalie-token")).toHaveClass(/screened/);
-
   await page.getByRole("button", { name: /shoot/i }).click();
   await expect(page.getByRole("dialog").getByText(/^GOAL$/)).toBeVisible();
+  await page.getByRole("button", { name: /record shift/i }).click();
+  await expect(page.getByText(/SHIFT 2\/3/)).toBeVisible();
+  await expect(page.getByText(/GF 1–0 GA/)).toBeVisible();
 });
 
-test("an overextended attack becomes a counterattack that Hatch can stop", async ({
+test("the constructed defensive line remains playable after a turnover", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 844, height: 390 });
   await page.goto("/");
-
-  await page.getByRole("button", { name: /Jet Larsson/ }).click();
-  await page.getByRole("button", { name: /Rook Bell.*Recover/ }).click();
-  await page.getByRole("button", { name: /cycle/i }).click();
-  await page.getByRole("button", { name: /cycle/i }).click();
-  await expect(page.locator(".defence-board--counterattack")).toBeVisible();
-
+  await page.getByRole("button", { name: /Flare Kovac/ }).click();
   await page.getByRole("button", { name: /Hatch Vale/ }).click();
-  await page.getByRole("button", { name: /Flare Kovac.*Finish/ }).click();
+  await page.getByRole("button", { name: /Hatch Vale/ }).click();
+  await page.getByRole("button", { name: /Flare Kovac/ }).click();
+  await page.getByRole("button", { name: /start three shifts/i }).click();
+  await page.getByRole("button", { name: /cycle/i }).click();
+  await page.getByRole("button", { name: /cycle/i }).click();
   await page.getByRole("button", { name: /^pressure$/i }).click();
-  await expect(
-    page.getByText("INTERCEPTION").or(page.getByText("TAKEAWAY")),
-  ).toBeVisible();
+  await expect(page.getByText(/TAKEAWAY/)).toBeVisible();
 });
 
-test("formation selector changes the visible weak point and counter route", async ({
+test("three resolved shifts produce a goals-for and goals-against match result", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 844, height: 390 });
   await page.goto("/");
+  await page.getByRole("button", { name: /start three shifts/i }).click();
 
-  await page.getByLabel("Opponent formation").selectOption("high-press");
-  await expect(
-    page
-      .getByLabel("Rink and defensive structure")
-      .getByText("High Press", { exact: true }),
-  ).toBeVisible();
-  await expect(
-    page
-      .getByLabel("Decision and player detail")
-      .getByText("Wide defenders are already pulled; possession is fragile.", {
-        exact: true,
-      }),
-  ).toBeVisible();
-  await expect(page.locator(".defender-token--pulled")).toHaveCount(2);
+  for (let shift = 1; shift <= 3; shift += 1) {
+    await page.getByRole("button", { name: /shoot/i }).click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await page.getByRole("button", { name: /record shift/i }).click();
+  }
 
-  await page.getByRole("button", { name: /Jet Larsson/ }).click();
-  await page.getByRole("button", { name: /Rook Bell.*Recover/ }).click();
-  await page.getByRole("button", { name: /cycle/i }).click();
-  await expect(page.getByText(/Instant cross-ice/).first()).toBeVisible();
-  await expect(page.getByText(/Predicted next lane: right/)).toBeVisible();
-});
-
-test("Carrier containment and Playmaker lane reads are explicit defensive responses", async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 844, height: 390 });
-  await page.goto("/");
-  await page.getByLabel("Opponent formation").selectOption("wide-denial");
-
-  await page.getByRole("button", { name: /cycle/i }).click();
-  await page.getByRole("button", { name: /cycle/i }).click();
-  await page.getByRole("button", { name: /Jet Larsson/ }).click();
-  await page.getByRole("button", { name: /Rook Bell.*Recover/ }).click();
-  await page.getByRole("button", { name: /force wide/i }).click();
-  await expect(page.getByText(/CONTAIN/)).toBeVisible();
-
-  await page.getByRole("button", { name: /read right/i }).click();
-  await expect(page.getByText(/INTERCEPTION/)).toBeVisible();
+  await expect(page.getByLabel("Three-shift match result")).toBeVisible();
+  await expect(page.getByText("DRAW", { exact: true })).toBeVisible();
+  await expect(page.getByText(/0 GOALS FOR · 0 GOALS AGAINST/)).toBeVisible();
 });

@@ -1,6 +1,6 @@
 # Mechanics Reference
 
-**Status:** V0.5 formation-variety rectangle gate. All states and routes are
+**Status:** V0.6 scouting and line-construction rectangle gate. All states and routes are
 deliberate deterministic fixtures, not production balance or authentic NHL
 system labels.
 
@@ -13,6 +13,32 @@ system labels.
 - A shift moves between **Attack** and **Defend**. A goal, goal against, or dead
   shot ends the test.
 - The selected formation is preserved when the shift restarts or resets.
+
+## Scouting and match
+
+- A scout report shows the exact three-formation sequence before play.
+- Six ordered skaters are selected from a nine-player rectangle pool.
+- Recover, Create, and Finish start active; three more skaters form the bench.
+- A match is exactly three shifts. Goals and goals against are recorded; a
+  breakdown changes neither score.
+- The same selected lineup starts every shift against the next known formation.
+- There is no Momentum target or random opponent selection.
+
+## Specialists and hybrids
+
+The original six players are specialists. Relay combines Carrier/Playmaker,
+Brace combines Retriever/Grinder, and Spark combines Disruptor/Sniper.
+
+Hybrids change visible hockey state instead of applying percentage penalties:
+
+- Relay combines carry and creation, but leaves the goalie set.
+- Brace can sustain a route, but cannot create Ridge's full screen; a hybrid
+  clear returns the puck loose.
+- Spark can finish a fully developed route, but lacks Flare's elite finish.
+- Hybrid pressure or lane reading delays a counterattack for one action rather
+  than winning the specialist's immediate stop.
+- A defensive substitution advances the counter route one step. Puck pressure
+  is too late at a terminal chance, which makes the active three matter.
 
 ## Opponent formations
 
@@ -35,8 +61,9 @@ the same actions and rules to all three definitions.
   chance by breaking the active shape.
 - Grinder entry pins and screens only after a **Chance** has been developed.
   Merely reaching the offensive zone is not enough.
-- SHOOT retains the transparent five-factor deterministic read. All five factors
-  score; an incomplete shot is saved and ends the test.
+- SHOOT uses six transparent factors and remains deterministic. Five active
+  factors score. Flare supplies the elite-specialist factor, allowing an earlier
+  finish; a hybrid finisher needs the rest of the route fully developed.
 - Extending an existing chance creates the selected formation's counterattack.
 
 ## Defence

@@ -3,6 +3,7 @@ import {
   INITIAL_BENCH,
   PLAYER_DEFINITIONS,
   playerDefinition,
+  playerHasRole,
 } from "../content/players";
 import {
   DEFAULT_FORMATION_ID,
@@ -17,6 +18,7 @@ import {
   type GameEvent,
   type GameState,
   type Lane,
+  type LineupDefinition,
   type OpponentFormationId,
   type PlayerId,
   type PlayerRole,
@@ -53,9 +55,21 @@ function activePlayerWithRole(
   state: GameState,
   role: PlayerRole,
 ): PlayerId | null {
-  return (
-    activeIds(state).find((id) => playerDefinition(id).role === role) ?? null
-  );
+  return activeIds(state).find((id) => playerHasRole(id, role)) ?? null;
+}
+
+function activeHasSpecialistRole(
+  state: GameState,
+  ...roles: PlayerRole[]
+): boolean {
+  return activeIds(state).some((id) => {
+    const player = playerDefinition(id);
+    return (
+      !isPenalized(state, id) &&
+      !player.secondaryRole &&
+      roles.includes(player.role)
+    );
+  });
 }
 
 function resetDefence(state: GameState): void {
@@ -112,7 +126,7 @@ function startCounterattack(state: GameState, reason: string): void {
 function activeHasRole(state: GameState, ...roles: PlayerRole[]): boolean {
   return activeIds(state).some(
     (id) =>
-      !isPenalized(state, id) && roles.includes(playerDefinition(id).role),
+      !isPenalized(state, id) && roles.some((role) => playerHasRole(id, role)),
   );
 }
 
@@ -208,6 +222,10 @@ function assertValidState(state: GameState): void {
 
 export function createInitialGame(
   formationId: OpponentFormationId = DEFAULT_FORMATION_ID,
+  lineup: LineupDefinition = {
+    active: INITIAL_ACTIVE,
+    bench: INITIAL_BENCH,
+  },
 ): GameState {
   const formation = formationDefinition(formationId);
   const players = Object.fromEntries(
@@ -219,11 +237,12 @@ export function createInitialGame(
 
   const state: GameState = {
     formationId,
-    active: { ...INITIAL_ACTIVE },
-    bench: [...INITIAL_BENCH],
+    startingLineup: structuredClone(lineup),
+    active: { ...lineup.active },
+    bench: [...lineup.bench],
     players,
     puck: {
-      holderId: "rook",
+      holderId: lineup.active.recover,
       zone: "neutral",
       lane: formation.initialPuckLane,
       state: "controlled",
@@ -242,7 +261,7 @@ export function createInitialGame(
   appendEvent(
     state,
     "SHIFT_STARTED",
-    `${formation.label}: ${formation.weakPoint} Rook controls the ${formation.initialPuckLane} lane in neutral ice.`,
+    `${formation.label}: ${formation.weakPoint} ${playerDefinition(lineup.active.recover).shortName} controls the ${formation.initialPuckLane} lane in neutral ice.`,
   );
   assertValidState(state);
   return state;
@@ -333,6 +352,39 @@ function resolveExitEffect(state: GameState, outgoingId: PlayerId): void {
 function resolveEntryEffect(state: GameState, incomingId: PlayerId): void {
   const incoming = playerDefinition(incomingId);
   const formation = formationDefinition(state.formationId);
+  if (
+    incoming.hybridEffect === "carry-create" &&
+    state.puck.state === "controlled" &&
+    state.puck.zone === "neutral"
+  ) {
+    state.puck = {
+      ...state.puck,
+      holderId: incomingId,
+      zone: "offensive",
+      lane: formation.carrierLane,
+      state: "chance",
+    };
+    state.defence.coverage[formation.carrierLane] = "pulled";
+    appendEvent(
+      state,
+      "ENTRY_EFFECT",
+      `${incoming.shortName} combines the carry and route creation in the ${formation.carrierLane} lane, but the goalie stays set.`,
+    );
+    return;
+  }
+  if (
+    incoming.hybridEffect === "retrieve-sustain" &&
+    state.puck.zone === "offensive" &&
+    state.puck.state === "chance"
+  ) {
+    state.defence.coverage[state.puck.lane] = "pinned";
+    appendEvent(
+      state,
+      "ENTRY_EFFECT",
+      `${incoming.shortName} sustains the chance and pins the defender, but cannot fully screen the goalie.`,
+    );
+    return;
+  }
   switch (incoming.role) {
     case "Retriever":
       if (state.puck.state === "loose") {
@@ -364,7 +416,11 @@ function resolveEntryEffect(state: GameState, incomingId: PlayerId): void {
       }
       break;
     case "Grinder":
-      if (state.puck.zone === "offensive" && state.puck.state === "chance") {
+      if (
+        !incoming.secondaryRole &&
+        state.puck.zone === "offensive" &&
+        state.puck.state === "chance"
+      ) {
         state.defence.coverage[state.puck.lane] = "pinned";
         state.defence.goalie = "screened";
         appendEvent(
@@ -420,8 +476,9 @@ function resolveEntryEffect(state: GameState, incomingId: PlayerId): void {
 
 function describeDefensiveEntry(state: GameState, incomingId: PlayerId): void {
   const incoming = playerDefinition(incomingId);
-  const response =
-    incoming.role === "Carrier"
+  const response = incoming.secondaryRole
+    ? "can cover two responses, but only delays the route as a hybrid"
+    : incoming.role === "Carrier"
       ? "is available to force the puck carrier wide"
       : incoming.role === "Playmaker"
         ? "can read the predicted passing lane"
@@ -498,16 +555,26 @@ function substitute(
     `${playerDefinition(incomingId).shortName} replaces ${playerDefinition(outgoingId).shortName} in ${slot.toUpperCase()}.`,
   );
   if (attacking) resolveEntryEffect(next, incomingId);
-  else describeDefensiveEntry(next, incomingId);
+  else {
+    describeDefensiveEntry(next, incomingId);
+    appendEvent(
+      next,
+      "COUNTERATTACK",
+      "The defensive change costs one route step while the opponent keeps possession.",
+    );
+    advanceCounterattack(next);
+    completeAction(next);
+  }
   next.puck.handoffProtected = false;
   assertValidState(next);
   return next;
 }
 
 function applyFlareDiscipline(state: GameState): void {
-  const flareId = activeIds(state).find(
-    (id) => playerDefinition(id).role === "Sniper",
-  );
+  const flareId = activeIds(state).find((id) => {
+    const player = playerDefinition(id);
+    return player.role === "Sniper" && !player.secondaryRole;
+  });
   if (!flareId || isPenalized(state, flareId)) return;
   const flare = state.players[flareId];
   flare.discipline = clamp(
@@ -581,11 +648,16 @@ function cycle(state: GameState): GameState {
     next.puck.holderId = playmakerId;
     next.puck.state = "chance";
     next.defence.coverage[formation.playmakerLane] = "pulled";
-    next.defence.goalie = "moving";
+    const hybridPlaymaker = Boolean(
+      playerDefinition(playmakerId).secondaryRole,
+    );
+    if (!hybridPlaymaker) next.defence.goalie = "moving";
     raiseThreat(
       next,
       12,
-      `${playerDefinition(playmakerId).shortName} reads the open middle and creates a chance through the ${formation.playmakerLane} lane.`,
+      hybridPlaymaker
+        ? `${playerDefinition(playmakerId).shortName} compresses the middle entry into one action, but the goalie stays set.`
+        : `${playerDefinition(playmakerId).shortName} reads the open middle and creates a chance through the ${formation.playmakerLane} lane.`,
     );
     applyFlareDiscipline(next);
     completeAction(next);
@@ -600,11 +672,14 @@ function cycle(state: GameState): GameState {
   next.puck.state = "chance";
   next.defence.coverage[previousLane] = "open";
   next.defence.coverage[targetLane] = "pulled";
-  next.defence.goalie = "moving";
+  const hybridPlaymaker = Boolean(playerDefinition(playmakerId).secondaryRole);
+  if (!hybridPlaymaker) next.defence.goalie = "moving";
   raiseThreat(
     next,
     12,
-    `${playerDefinition(playmakerId).shortName} sends a cross-ice pass: the goalie is moving and the ${targetLane} defender is pulled out.`,
+    hybridPlaymaker
+      ? `${playerDefinition(playmakerId).shortName} creates the ${targetLane} route, but cannot move the goalie like a specialist.`
+      : `${playerDefinition(playmakerId).shortName} sends a cross-ice pass: the goalie is moving and the ${targetLane} defender is pulled out.`,
   );
   applyFlareDiscipline(next);
   completeAction(next);
@@ -652,10 +727,31 @@ function pressurePuck(state: GameState): GameState {
     );
     return next;
   }
-  if (activeHasRole(next, "Disruptor", "Grinder")) {
+  if (currentCounterStep(next)?.terminal) {
+    appendEvent(
+      next,
+      "COUNTERATTACK",
+      "Puck pressure is too late at the terminal chance; only a crease clear can recover.",
+    );
+    advanceCounterattack(next);
+    completeAction(next);
+    assertValidState(next);
+    return next;
+  }
+  if (activeHasSpecialistRole(next, "Disruptor", "Grinder")) {
     returnToNeutral(
       next,
       "TAKEAWAY: your defensive specialist stripped the puck carrier before the pass.",
+    );
+  } else if (
+    activeHasRole(next, "Disruptor", "Grinder") &&
+    !next.counterattack.contained
+  ) {
+    next.counterattack.contained = true;
+    appendEvent(
+      next,
+      "COUNTERATTACK",
+      "HYBRID PRESSURE: the route is slowed for one action, but the puck is not won.",
     );
   } else {
     appendEvent(
@@ -718,10 +814,24 @@ function readPass(state: GameState, lane: Lane): GameState {
     return next;
   }
   const step = currentCounterStep(next);
-  if (activeHasRole(next, "Playmaker") && step?.predictedLane === lane) {
+  if (
+    activeHasSpecialistRole(next, "Playmaker") &&
+    step?.predictedLane === lane
+  ) {
     returnToNeutral(
       next,
       `INTERCEPTION: the Playmaker read the ${lane} passing lane before the puck arrived.`,
+    );
+  } else if (
+    activeHasRole(next, "Playmaker") &&
+    step?.predictedLane === lane &&
+    !next.counterattack.contained
+  ) {
+    next.counterattack.contained = true;
+    appendEvent(
+      next,
+      "COUNTERATTACK",
+      `HYBRID READ: the ${lane} route is delayed for one action, but not intercepted.`,
     );
   } else {
     appendEvent(
@@ -750,10 +860,29 @@ function clearNetFront(state: GameState): GameState {
     return next;
   }
   if (activeHasRole(next, "Grinder", "Retriever")) {
-    returnToNeutral(
-      next,
-      "CLEAR: the crease battle is won and the puck is moved safely to neutral ice.",
-    );
+    if (activeHasSpecialistRole(next, "Grinder", "Retriever")) {
+      returnToNeutral(
+        next,
+        "CLEAR: the specialist wins the crease battle and moves the puck to neutral ice.",
+      );
+    } else {
+      next.phase = "attack";
+      next.counterattack = null;
+      next.puck = {
+        holderId: null,
+        zone: "neutral",
+        lane: formationDefinition(next.formationId).initialPuckLane,
+        state: "loose",
+        handoffProtected: false,
+      };
+      resetDefence(next);
+      next.counterThreat = 0;
+      appendEvent(
+        next,
+        "DEFENSIVE_STOP",
+        "HYBRID CLEAR: the chance is stopped, but the puck returns loose in neutral ice.",
+      );
+    }
   } else {
     concedeCounterattack(next);
   }
@@ -763,7 +892,17 @@ function clearNetFront(state: GameState): GameState {
 }
 
 export function previewShot(state: GameState): ShotPreview {
-  const sniperId = activePlayerWithRole(state, "Sniper");
+  const sniperId = activeIds(state).find(
+    (id) => playerHasRole(id, "Sniper") && !isPenalized(state, id),
+  );
+  const eliteSniperId = activeIds(state).find((id) => {
+    const player = playerDefinition(id);
+    return (
+      player.role === "Sniper" &&
+      !player.secondaryRole &&
+      !isPenalized(state, id)
+    );
+  });
   const factors = [
     {
       label: "Offensive-zone possession",
@@ -779,9 +918,10 @@ export function previewShot(state: GameState): ShotPreview {
     },
     { label: "Net-front screen", active: state.defence.goalie === "screened" },
     {
-      label: "Sniper available in Finish",
-      active: sniperId !== null && !isPenalized(state, sniperId),
+      label: "Finisher available",
+      active: sniperId !== undefined,
     },
+    { label: "Elite specialist finish", active: eliteSniperId !== undefined },
   ] as const;
   const rating = factors.filter((factor) => factor.active).length;
   const result = rating >= 5 ? "goal" : "save";
@@ -813,7 +953,7 @@ function shoot(state: GameState): GameState {
     next,
     "SHOT",
     preview.result === "goal"
-      ? "GOAL: the exposed lane, moving goalie, screen, and finish all connected."
+      ? "GOAL: the visible route and available finish fully exposed the net."
       : "SAVE: the goalie still had enough structure in front of them. The play is dead.",
   );
   assertValidState(next);
@@ -822,9 +962,11 @@ function shoot(state: GameState): GameState {
 
 export function reduceGame(state: GameState, action: GameAction): GameState {
   if (action.type === "SELECT_FORMATION") {
-    return createInitialGame(action.formationId);
+    return createInitialGame(action.formationId, state.startingLineup);
   }
-  if (action.type === "RESTART") return createInitialGame(state.formationId);
+  if (action.type === "RESTART") {
+    return createInitialGame(state.formationId, state.startingLineup);
+  }
   if (state.status !== "playing") return state;
   switch (action.type) {
     case "SUBSTITUTE":

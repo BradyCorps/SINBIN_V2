@@ -1,5 +1,5 @@
-import { GamePrototype } from "@/src/components/game/GamePrototype";
+import { RosterLab } from "@/src/components/game/RosterLab";
 
 export default function Home() {
-  return <GamePrototype />;
+  return <RosterLab />;
 }

@@ -32,6 +32,25 @@ function turnover(formationId: OpponentFormationId): GameState {
   return reduceGame(chance, { type: "CYCLE" });
 }
 
+function turnoverWithHatch(formationId: OpponentFormationId): GameState {
+  let state = createInitialGame(formationId);
+  state = reduceGame(state, {
+    type: "SUBSTITUTE",
+    incomingId: "hatch",
+    slot: "finish",
+  });
+  if (formationId === "slot-collapse" || formationId === "high-press") {
+    state = reduceGame(state, {
+      type: "SUBSTITUTE",
+      incomingId: "jet",
+      slot: "recover",
+    });
+  }
+  if (state.puck.state !== "chance")
+    state = reduceGame(state, { type: "CYCLE" });
+  return reduceGame(state, { type: "CYCLE" });
+}
+
 describe("SINBIN V0.5 formation variety rectangle lab", () => {
   it("defines exactly three visibly different deterministic formations", () => {
     expect(Object.keys(OPPONENT_FORMATIONS)).toEqual([
@@ -178,12 +197,12 @@ describe("SINBIN V0.5 formation variety rectangle lab", () => {
   );
 
   it("Carrier containment moves a middle carry wide and buys one action", () => {
-    let defending = turnover("wide-denial");
-    defending = reduceGame(defending, {
+    let defending = reduceGame(createInitialGame("wide-denial"), {
       type: "SUBSTITUTE",
       incomingId: "jet",
       slot: "recover",
     });
+    defending = reduceGame(defending, { type: "CYCLE" });
     const contained = reduceGame(defending, { type: "FORCE_WIDE" });
     expect(contained.phase).toBe("defend");
     expect(contained.counterattack).toMatchObject({
@@ -221,11 +240,7 @@ describe("SINBIN V0.5 formation variety rectangle lab", () => {
       });
       expect(withoutSpecialist.phase).toBe("defend");
 
-      const withHatch = reduceGame(turnover(formationId), {
-        type: "SUBSTITUTE",
-        incomingId: "hatch",
-        slot: "finish",
-      });
+      const withHatch = turnoverWithHatch(formationId);
       expect(reduceGame(withHatch, { type: "PRESSURE_PUCK" }).phase).toBe(
         "attack",
       );

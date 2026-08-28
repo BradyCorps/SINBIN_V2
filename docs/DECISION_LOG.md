@@ -87,3 +87,16 @@ a Grinder can screen. Generic non-Sniper lane closure is replaced by two visible
 role responses: Carrier containment buys one defensive action, and Playmaker
 lane reading intercepts only the predicted lane. No progression, equipment,
 randomness, timing policy, art, or production UI is introduced.
+
+## 2026-08-28 — V0.6 tests scouting and line construction
+
+The next uncertainty is roster choice, not another combat mechanic. V0.6 wraps
+the deterministic V0.5 shift in a known three-formation scout report, selection
+of six ordered skaters from nine rectangles, and a three-shift goals-for / goals-
+against match.
+
+Three hybrids compress two capabilities but produce weaker visible outcomes than
+specialists. Flare can finish a five-of-six opening; Spark requires the complete
+non-elite route. Hybrid defensive reads delay rather than immediately stop the
+counter. No drafting, progression, equipment rules, randomness, Momentum target,
+timing mode, or final UI is added.

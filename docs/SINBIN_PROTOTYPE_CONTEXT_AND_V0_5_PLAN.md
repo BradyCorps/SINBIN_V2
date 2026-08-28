@@ -228,7 +228,8 @@ opponent's next route, or discover one universal line-change sequence.
 
 ## Direction after V0.5
 
-Only after formation and role variety pass the rectangle gate should the project
-enter a content-expansion phase. Sticks are the first likely addition because
-they can alter an existing route or trade-off. They must be designed as visible
-hockey grammar, not a stat layer.
+V0.6 tests scouting and line construction before any further combat or equipment
+expansion. The player sees a known three-formation sequence, selects six skaters
+from a nine-player rectangle pool, and plays a three-shift goals-for / goals-
+against match. Only after opponent-specific roster choices are felt during the
+shift should sticks or other content layers be reconsidered.

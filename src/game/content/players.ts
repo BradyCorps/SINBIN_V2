@@ -85,6 +85,42 @@ export const PLAYER_DEFINITIONS: Record<PlayerId, PlayerDefinition> = {
     },
     accent: "#9d8060",
   },
+  relay: {
+    id: "relay",
+    name: "Relay Okafor",
+    shortName: "Relay",
+    role: "Carrier",
+    secondaryRole: "Playmaker",
+    hybridEffect: "carry-create",
+    maxStamina: 88,
+    entryEffect: "carry-puck",
+    exitEffect: "bank-setup",
+    accent: "#6aa4a8",
+  },
+  brace: {
+    id: "brace",
+    name: "Brace Nolan",
+    shortName: "Brace",
+    role: "Retriever",
+    secondaryRole: "Grinder",
+    hybridEffect: "retrieve-sustain",
+    maxStamina: 94,
+    entryEffect: "retrieve-puck",
+    exitEffect: "protect-handoff",
+    accent: "#7d9274",
+  },
+  spark: {
+    id: "spark",
+    name: "Spark Ibarra",
+    shortName: "Spark",
+    role: "Disruptor",
+    secondaryRole: "Sniper",
+    hybridEffect: "disrupt-finish",
+    maxStamina: 82,
+    entryEffect: "break-forecheck",
+    exitEffect: "draw-coverage",
+    accent: "#c56a63",
+  },
 };
 
 export const INITIAL_ACTIVE: Record<ActiveSlot, PlayerId> = {
@@ -103,4 +139,19 @@ export function playerDefinition(id: PlayerId): PlayerDefinition {
   const player = PLAYER_DEFINITIONS[id];
   if (!player) throw new Error(`Unknown player: ${id}`);
   return player;
+}
+
+export function playerHasRole(
+  id: PlayerId,
+  role: PlayerDefinition["role"],
+): boolean {
+  const player = playerDefinition(id);
+  return player.role === role || player.secondaryRole === role;
+}
+
+export function playerRoleLabel(id: PlayerId): string {
+  const player = playerDefinition(id);
+  return player.secondaryRole
+    ? `${player.role} / ${player.secondaryRole}`
+    : player.role;
 }
