@@ -8,12 +8,17 @@ import {
   reduceGame,
 } from "@/src/game/core/engine";
 import {
+  OPPONENT_FORMATIONS,
+  formationDefinition,
+} from "@/src/game/content/formations";
+import {
   ACTIVE_SLOTS,
   LANES,
   type ActiveSlot,
   type GameAction,
   type GameState,
   type Lane,
+  type OpponentFormationId,
   type PlayerId,
 } from "@/src/game/core/types";
 import { playerDefinition } from "@/src/game/content/players";
@@ -27,13 +32,22 @@ const SLOT_LABELS: Record<ActiveSlot, string> = {
 
 function puckLabel(state: GameState): string {
   if (state.phase === "defend" && state.counterattack) {
-    return `Opponent puck · ${state.counterattack.route.replaceAll("-", " ")} · ${state.counterattack.puckLane}`;
+    const step = currentCounterStep(state);
+    return `Opponent puck · ${step?.label ?? "counterattack"} · ${state.counterattack.puckLane}`;
   }
   if (state.puck.state === "loose") return "Loose puck";
   return `${state.puck.state === "chance" ? "Chance" : "Controlled puck"} · ${state.puck.zone} ${state.puck.lane}`;
 }
 
+function currentCounterStep(state: GameState) {
+  if (!state.counterattack) return null;
+  return formationDefinition(state.formationId).counterRoute[
+    state.counterattack.stepIndex
+  ];
+}
+
 function nextDecision(state: GameState, selectedBench: PlayerId | null) {
+  const formation = formationDefinition(state.formationId);
   if (selectedBench) {
     const player = playerDefinition(selectedBench);
     return {
@@ -42,24 +56,12 @@ function nextDecision(state: GameState, selectedBench: PlayerId | null) {
     };
   }
   if (state.phase === "defend" && state.counterattack) {
-    if (state.counterattack.route === "carry") {
-      return {
-        title: "Stop the left-lane carry",
-        detail:
-          "Hatch or Ridge can pressure the puck for an immediate takeaway. Or close RIGHT to intercept the cross-ice pass.",
-      };
-    }
-    if (state.counterattack.route === "cross-ice") {
-      return {
-        title: "Seal the slot",
-        detail:
-          "The puck is right side. Close SLOT before the net-front feed arrives, or the opponent creates a crease chance.",
-      };
-    }
+    const step = currentCounterStep(state);
     return {
-      title: "Clear the net front",
-      detail:
-        "The opponent has reached the slot. Ridge or Rook can clear the crease; otherwise this becomes a goal against.",
+      title: step?.label ?? "Counterattack live",
+      detail: step?.predictedLane
+        ? `Puck in ${state.counterattack.puckLane}. The route points toward ${step.predictedLane}; choose which role response to trust.`
+        : `The ${state.counterattack.puckLane}-lane chance is live at your net.`,
     };
   }
   if (state.penalty) {
@@ -72,34 +74,30 @@ function nextDecision(state: GameState, selectedBench: PlayerId | null) {
     return {
       title: "Recover possession",
       detail:
-        "Get a Retriever on the ice. A bad change leaves the puck loose and allows the defence to reset.",
+        "The puck is loose and the opponent shape has reset. A Retriever can secure the transition.",
     };
   }
   if (state.puck.zone === "neutral") {
     return {
-      title: "Get Jet on the ice",
-      detail:
-        "Jet is the Carrier. Replacing Rook with a protected handoff moves the puck into the offensive zone and pulls a defender wide.",
+      title: formation.label,
+      detail: formation.weakPoint,
     };
   }
   if (state.puck.state === "controlled") {
     return {
-      title: "Cycle the puck cross-ice",
-      detail:
-        "Lane is on the ice. CYCLE moves the puck to the far lane, pulls coverage, and forces the goalie to move.",
+      title: `Controlled in ${state.puck.lane}`,
+      detail: `The goalie is ${state.defence.goalie}; coverage is ${state.defence.coverage[state.puck.lane]} around the puck.`,
     };
   }
   if (state.defence.goalie !== "screened") {
     return {
-      title: "Create a screen",
-      detail:
-        "The goalie is moving, but still sees the puck. Change Ridge in to pin the defender and screen the net.",
+      title: `Chance in ${state.puck.lane}`,
+      detail: `The goalie is ${state.defence.goalie}. Shoot, extend the route, protect it, or change the line.`,
     };
   }
   return {
-    title: "The net is exposed",
-    detail:
-      "The shooting lane is open, the goalie is screened, and Flare is available. SHOOT is a deterministic goal.",
+    title: "Screen established",
+    detail: `The ${state.puck.lane} defender is ${state.defence.coverage[state.puck.lane]} and the goalie is screened.`,
   };
 }
 
@@ -157,16 +155,13 @@ function DefenceToken({ lane, state }: { lane: Lane; state: GameState }) {
 function CounterattackToken({ lane, state }: { lane: Lane; state: GameState }) {
   const attack = state.counterattack;
   if (!attack) return null;
+  const step = currentCounterStep(state);
   const isPuckLane = attack.puckLane === lane;
-  const isBlocked = attack.blockedLane === lane;
-  const label = isPuckLane
-    ? attack.route.replaceAll("-", " ")
-    : isBlocked
-      ? "closed"
-      : "route";
+  const isPredicted = step?.predictedLane === lane;
+  const label = isPuckLane ? step?.label : isPredicted ? "predicted" : "route";
   return (
     <div
-      className={`counter-token${isPuckLane ? " counter-token--puck" : ""}${isBlocked ? " counter-token--closed" : ""}`}
+      className={`counter-token${isPuckLane ? " counter-token--puck" : ""}${isPredicted ? " counter-token--closed" : ""}`}
     >
       <span>{lane === "slot" ? "SLOT" : `${lane.toUpperCase()} LANE`}</span>
       <strong>{label}</strong>
@@ -174,9 +169,15 @@ function CounterattackToken({ lane, state }: { lane: Lane; state: GameState }) {
   );
 }
 
-export function GamePrototype({ initialState }: { initialState?: GameState }) {
+export function GamePrototype({
+  initialState,
+  initialFormationId = "slot-collapse",
+}: {
+  initialState?: GameState;
+  initialFormationId?: OpponentFormationId;
+}) {
   const [game, setGame] = useState<GameState>(
-    () => initialState ?? createInitialGame(),
+    () => initialState ?? createInitialGame(initialFormationId),
   );
   const [selectedBench, setSelectedBench] = useState<PlayerId | null>(null);
   const [inspectedId, setInspectedId] = useState<PlayerId>("rook");
@@ -188,6 +189,8 @@ export function GamePrototype({ initialState }: { initialState?: GameState }) {
   const guidance = nextDecision(game, selectedBench);
   const detailId = selectedBench ?? inspectedId;
   const detail = playerDefinition(detailId);
+  const formation = formationDefinition(game.formationId);
+  const counterStep = currentCounterStep(game);
   const latestEvents = game.eventLog.slice(-4).reverse();
 
   const chooseBench = (id: PlayerId) => {
@@ -210,15 +213,34 @@ export function GamePrototype({ initialState }: { initialState?: GameState }) {
       <StageScaler>
         <section
           className="v03-stage"
-          aria-label="SINBIN V0.4 counterattack mechanics lab"
+          aria-label="SINBIN V0.5 formation variety mechanics lab"
         >
           <header className="v03-header">
             <div>
-              <small>V0.4 RECTANGLE TEST</small>
+              <small>V0.5 RECTANGLE TEST</small>
               <strong>SINBIN</strong>
-              <span>Break the shape. Defend the turnover.</span>
+              <span>Read the shape. Build a route. Defend the swing.</span>
             </div>
-            <p>ONE SHIFT · ATTACK → TURNOVER → DEFEND</p>
+            <label className="formation-selector">
+              <span>OPPONENT FORMATION</span>
+              <select
+                aria-label="Opponent formation"
+                value={game.formationId}
+                onChange={(event) => {
+                  dispatch({
+                    type: "SELECT_FORMATION",
+                    formationId: event.target.value as OpponentFormationId,
+                  });
+                  setSelectedBench(null);
+                }}
+              >
+                {Object.values(OPPONENT_FORMATIONS).map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
             <button
               onClick={() => {
                 dispatch({ type: "RESTART" });
@@ -265,12 +287,12 @@ export function GamePrototype({ initialState }: { initialState?: GameState }) {
               </div>
               <div>
                 <span>
-                  {game.phase === "defend" ? "COUNTER ROUTE" : "FORECHECK"}
+                  {game.phase === "defend" ? "COUNTER ROUTE" : "FORMATION"}
                 </span>
                 <strong>
                   {game.phase === "defend"
-                    ? game.counterattack?.route.replaceAll("-", " ")
-                    : game.defence.forecheck}
+                    ? counterStep?.label
+                    : formation.label}
                 </strong>
               </div>
               <div>
@@ -340,54 +362,37 @@ export function GamePrototype({ initialState }: { initialState?: GameState }) {
                 </span>
                 <strong>
                   {game.phase === "defend"
-                    ? `${game.counterattack?.route ?? ""}`
+                    ? `${(game.counterattack?.stepIndex ?? 0) + 1}/${formation.counterRoute.length}`
                     : `${shot.rating}/5`}
                 </strong>
               </header>
-              {game.phase === "attack" ? (
-                shot.factors.map((factor) => (
-                  <p
-                    key={factor.label}
-                    className={factor.active ? "active" : "inactive"}
-                  >
-                    <i>{factor.active ? "✓" : "×"}</i> {factor.label}
-                  </p>
-                ))
-              ) : (
-                <>
-                  <p
-                    className={
-                      game.counterattack?.route === "carry"
-                        ? "active"
-                        : "inactive"
-                    }
-                  >
-                    <i>1</i> Left-lane carry
-                  </p>
-                  <p
-                    className={
-                      game.counterattack?.route === "cross-ice"
-                        ? "active"
-                        : "inactive"
-                    }
-                  >
-                    <i>2</i> Cross-ice pass
-                  </p>
-                  <p
-                    className={
-                      game.counterattack?.route === "net-front"
-                        ? "active"
-                        : "inactive"
-                    }
-                  >
-                    <i>3</i> Net-front chance
-                  </p>
-                </>
-              )}
+              {game.phase === "attack"
+                ? shot.factors.map((factor) => (
+                    <p
+                      key={factor.label}
+                      className={factor.active ? "active" : "inactive"}
+                    >
+                      <i>{factor.active ? "✓" : "×"}</i> {factor.label}
+                    </p>
+                  ))
+                : formation.counterRoute.map((step, index) => (
+                    <p
+                      key={step.id}
+                      className={
+                        game.counterattack?.stepIndex === index
+                          ? "active"
+                          : "inactive"
+                      }
+                    >
+                      <i>{index + 1}</i> {step.label} · {step.puckLane}
+                    </p>
+                  ))}
               <small>
                 {game.phase === "attack"
                   ? shot.summary
-                  : "Pressure needs Hatch or Ridge. Close the route before it reaches your net."}
+                  : counterStep?.predictedLane
+                    ? `Predicted next lane: ${counterStep.predictedLane}.`
+                    : "Terminal chance: clear it or concede."}
               </small>
             </section>
 
@@ -429,33 +434,28 @@ export function GamePrototype({ initialState }: { initialState?: GameState }) {
                   </button>
                 </>
               ) : (
-                <>
+                <div className="defence-actions">
                   <button onClick={() => dispatch({ type: "PRESSURE_PUCK" })}>
-                    PRESSURE PUCK
+                    PRESSURE
                   </button>
-                  <button
-                    onClick={() =>
-                      dispatch({
-                        type: "CLOSE_LANE",
-                        lane:
-                          game.counterattack?.route === "cross-ice"
-                            ? "slot"
-                            : "right",
-                      })
-                    }
-                  >
-                    CLOSE{" "}
-                    {game.counterattack?.route === "cross-ice"
-                      ? "SLOT"
-                      : "RIGHT"}
+                  <button onClick={() => dispatch({ type: "FORCE_WIDE" })}>
+                    FORCE WIDE
                   </button>
+                  {LANES.map((lane) => (
+                    <button
+                      key={lane}
+                      onClick={() => dispatch({ type: "READ_PASS", lane })}
+                    >
+                      READ {lane === "slot" ? "SLOT" : lane.toUpperCase()}
+                    </button>
+                  ))}
                   <button
                     className="shoot"
                     onClick={() => dispatch({ type: "CLEAR_NET_FRONT" })}
                   >
-                    CLEAR NET FRONT
+                    CLEAR CHANCE
                   </button>
-                </>
+                </div>
               )}
             </section>
           </aside>

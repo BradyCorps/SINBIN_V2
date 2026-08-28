@@ -133,6 +133,26 @@ button:focus-visible {
   color: #cbd7d2;
   text-align: center;
 }
+.formation-selector {
+  display: grid;
+  gap: 5px;
+  min-width: 220px;
+  color: #cbd7d2;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-align: center;
+}
+.formation-selector select {
+  height: 34px;
+  border: 1px solid #9d8060;
+  color: var(--cream);
+  font: inherit;
+  font-size: 11px;
+  text-align: center;
+  text-transform: uppercase;
+  background: #0b2835;
+}
 .v03-header button {
   height: 46px;
   background: var(--amber);
@@ -568,6 +588,19 @@ button:focus-visible {
   background: linear-gradient(145deg, #c55339, #7c201a);
   font-size: 18px;
   font-style: italic;
+}
+.defence-actions {
+  display: grid;
+  grid-column: 1/-1;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.lab-actions .defence-actions button {
+  padding: 7px 4px;
+  font-size: 8px;
+}
+.lab-actions .defence-actions .shoot {
+  font-size: 11px;
 }
 .v03-log {
   grid-column: 1/-1;

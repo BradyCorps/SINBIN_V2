@@ -91,8 +91,54 @@ test("an overextended attack becomes a counterattack that Hatch can stop", async
 
   await page.getByRole("button", { name: /Hatch Vale/ }).click();
   await page.getByRole("button", { name: /Flare Kovac.*Finish/ }).click();
-  await page.getByRole("button", { name: /pressure puck/i }).click();
+  await page.getByRole("button", { name: /^pressure$/i }).click();
   await expect(
     page.getByText("INTERCEPTION").or(page.getByText("TAKEAWAY")),
   ).toBeVisible();
+});
+
+test("formation selector changes the visible weak point and counter route", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.goto("/");
+
+  await page.getByLabel("Opponent formation").selectOption("high-press");
+  await expect(
+    page
+      .getByLabel("Rink and defensive structure")
+      .getByText("High Press", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page
+      .getByLabel("Decision and player detail")
+      .getByText("Wide defenders are already pulled; possession is fragile.", {
+        exact: true,
+      }),
+  ).toBeVisible();
+  await expect(page.locator(".defender-token--pulled")).toHaveCount(2);
+
+  await page.getByRole("button", { name: /Jet Larsson/ }).click();
+  await page.getByRole("button", { name: /Rook Bell.*Recover/ }).click();
+  await page.getByRole("button", { name: /cycle/i }).click();
+  await expect(page.getByText(/Instant cross-ice/).first()).toBeVisible();
+  await expect(page.getByText(/Predicted next lane: right/)).toBeVisible();
+});
+
+test("Carrier containment and Playmaker lane reads are explicit defensive responses", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.goto("/");
+  await page.getByLabel("Opponent formation").selectOption("wide-denial");
+
+  await page.getByRole("button", { name: /cycle/i }).click();
+  await page.getByRole("button", { name: /cycle/i }).click();
+  await page.getByRole("button", { name: /Jet Larsson/ }).click();
+  await page.getByRole("button", { name: /Rook Bell.*Recover/ }).click();
+  await page.getByRole("button", { name: /force wide/i }).click();
+  await expect(page.getByText(/CONTAIN/)).toBeVisible();
+
+  await page.getByRole("button", { name: /read right/i }).click();
+  await expect(page.getByText(/INTERCEPTION/)).toBeVisible();
 });

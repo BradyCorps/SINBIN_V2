@@ -1,5 +1,11 @@
 import { createInitialGame, reduceGame } from "../core/engine";
-import type { GameState } from "../core/types";
+import type { GameState, OpponentFormationId } from "../core/types";
+
+export function formationOpeningScenario(
+  formationId: OpponentFormationId,
+): GameState {
+  return createInitialGame(formationId);
+}
 
 export function crossIceChanceScenario(): GameState {
   let state = createInitialGame();

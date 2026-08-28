@@ -74,3 +74,16 @@ the puck to neutral; failure concedes a goal against.
 This is a core-loop change, not a V0.31 presentation adjustment. It also gives
 Flare a concrete trade-off: a superior finisher cannot solve the immediate
 defensive puck-pressure problem.
+
+## 2026-08-28 — V0.5 tests formation and role variety
+
+V0.5 keeps the single deterministic shift and replaces the fixed opponent shape
+with exactly three data-defined rectangle formations. Each formation owns its
+visible starting coverage, weak point, attack lanes, and ordered counterattack
+route. Selection is explicit for repeatable tests and Storybook scenarios.
+
+The V0.3 Jet-to-Ridge shortcut is closed by requiring a developed Chance before
+a Grinder can screen. Generic non-Sniper lane closure is replaced by two visible
+role responses: Carrier containment buys one defensive action, and Playmaker
+lane reading intercepts only the predicted lane. No progression, equipment,
+randomness, timing policy, art, or production UI is introduced.
