@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { createInitialGame, previewShot, reduceGame } from "./engine";
-import { advanceMatch, createMatch, lineupFromSelection } from "./match";
+import {
+  MATCH_LINEUP_BUDGET,
+  advanceMatch,
+  createMatch,
+  isLineupEligible,
+  lineupCost,
+  lineupFromSelection,
+} from "./match";
 import type { GameAction, GameState } from "./types";
 
 function apply(state: GameState, actions: GameAction[]): GameState {
@@ -16,6 +23,15 @@ const specialistLineup = lineupFromSelection([
   "hatch",
 ]);
 
+const compressedLineup = lineupFromSelection([
+  "rook",
+  "relay",
+  "flare",
+  "jet",
+  "brace",
+  "hatch",
+]);
+
 describe("SINBIN V0.6 scouting and line construction lab", () => {
   it("builds six ordered lineup slots from six unique selections", () => {
     expect(specialistLineup).toEqual({
@@ -24,6 +40,27 @@ describe("SINBIN V0.6 scouting and line construction lab", () => {
     });
     expect(() => lineupFromSelection(["rook", "rook"])).toThrow(
       "six unique skaters",
+    );
+  });
+
+  it("requires two role-compression choices for a match lineup", () => {
+    expect(lineupCost(["rook", "lane", "flare", "jet", "ridge", "hatch"])).toBe(
+      12,
+    );
+    expect(
+      lineupCost(["rook", "relay", "flare", "jet", "ridge", "hatch"]),
+    ).toBe(11);
+    expect(
+      lineupCost(["rook", "relay", "flare", "jet", "brace", "hatch"]),
+    ).toBe(MATCH_LINEUP_BUDGET);
+    expect(
+      isLineupEligible(["rook", "lane", "flare", "jet", "ridge", "hatch"]),
+    ).toBe(false);
+    expect(
+      isLineupEligible(["rook", "relay", "flare", "jet", "brace", "hatch"]),
+    ).toBe(true);
+    expect(() => createMatch(specialistLineup, "wide-rush")).toThrow(
+      "10-point lineup budget",
     );
   });
 
@@ -121,7 +158,7 @@ describe("SINBIN V0.6 scouting and line construction lab", () => {
   });
 
   it("runs exactly three known shifts and records goals for and against", () => {
-    let match = createMatch(specialistLineup, "wide-rush");
+    let match = createMatch(compressedLineup, "wide-rush");
     expect(match.shift.formationId).toBe("wide-denial");
 
     const goal = apply(match.shift, [

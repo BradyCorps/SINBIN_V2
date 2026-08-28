@@ -1,4 +1,5 @@
 import { SCOUT_REPORTS, type ScoutReportId } from "../content/scouting";
+import { playerDefinition } from "../content/players";
 import { createInitialGame } from "./engine";
 import {
   ACTIVE_SLOTS,
@@ -6,6 +7,27 @@ import {
   type LineupDefinition,
   type PlayerId,
 } from "./types";
+
+export const MATCH_LINEUP_BUDGET = 10;
+
+export function playerLineupCost(playerId: PlayerId): number {
+  return playerDefinition(playerId).secondaryRole ? 1 : 2;
+}
+
+export function lineupCost(playerIds: readonly PlayerId[]): number {
+  return playerIds.reduce(
+    (total, playerId) => total + playerLineupCost(playerId),
+    0,
+  );
+}
+
+export function isLineupEligible(playerIds: readonly PlayerId[]): boolean {
+  return (
+    playerIds.length === 6 &&
+    new Set(playerIds).size === 6 &&
+    lineupCost(playerIds) <= MATCH_LINEUP_BUDGET
+  );
+}
 
 export interface MatchState {
   scoutReportId: ScoutReportId;
@@ -42,8 +64,10 @@ export function createMatch(
   scoutReportId: ScoutReportId,
 ): MatchState {
   const selected = selectedPlayerIds(lineup);
-  if (selected.length !== 6 || new Set(selected).size !== 6) {
-    throw new Error("A match lineup requires six unique skaters.");
+  if (!isLineupEligible(selected)) {
+    throw new Error(
+      `A match lineup requires six unique skaters within the ${MATCH_LINEUP_BUDGET}-point lineup budget.`,
+    );
   }
   const report = SCOUT_REPORTS[scoutReportId];
   return {

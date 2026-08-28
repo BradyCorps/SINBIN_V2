@@ -885,13 +885,31 @@ button:focus-visible {
 }
 .lineup-panel li {
   display: grid;
-  grid-template-columns: 66px 70px 1fr;
+  grid-template-columns: minmax(0, 1fr) 48px;
   align-items: center;
   min-height: 47px;
   padding: 8px;
   border: 1px dashed var(--line);
   color: #8fa4a3;
   background: #0a202b;
+}
+.lineup-panel li > div {
+  display: grid;
+  grid-template-columns: 58px 66px minmax(0, 1fr);
+  align-items: center;
+}
+.lineup-panel li nav {
+  display: flex;
+  gap: 4px;
+  justify-content: end;
+}
+.lineup-panel li nav button {
+  width: 21px;
+  height: 27px;
+  margin: 0;
+  padding: 0;
+  background: #27586a;
+  font-size: 13px;
 }
 .lineup-panel li.filled {
   border-style: solid;

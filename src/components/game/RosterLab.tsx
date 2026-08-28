@@ -9,9 +9,13 @@ import {
 import { SCOUT_REPORTS, type ScoutReportId } from "@/src/game/content/scouting";
 import { formationDefinition } from "@/src/game/content/formations";
 import {
+  MATCH_LINEUP_BUDGET,
   advanceMatch,
   createMatch,
+  isLineupEligible,
+  lineupCost,
   lineupFromSelection,
+  playerLineupCost,
   type MatchState,
 } from "@/src/game/core/match";
 import type { PlayerId } from "@/src/game/core/types";
@@ -20,10 +24,10 @@ import { StageScaler } from "./StageScaler";
 
 const DEFAULT_SELECTION: PlayerId[] = [
   "rook",
-  "lane",
+  "relay",
   "flare",
   "jet",
-  "ridge",
+  "brace",
   "hatch",
 ];
 
@@ -71,7 +75,11 @@ function RosterCard({
       <strong>{player.shortName}</strong>
       <em>{playerRoleLabel(id)}</em>
       <p>{PLAYER_READS[id]}</p>
-      <small>{selected ? SLOT_NAMES[slotIndex] : "SELECT"}</small>
+      <small>
+        {selected
+          ? SLOT_NAMES[slotIndex]
+          : `${playerLineupCost(id)} PT${playerLineupCost(id) === 1 ? "" : "S"}`}
+      </small>
     </button>
   );
 }
@@ -142,6 +150,8 @@ export function RosterLab() {
 
   const report = SCOUT_REPORTS[scoutReportId];
   const selected = selectedSlots.filter((id): id is PlayerId => id !== null);
+  const selectedCost = lineupCost(selected);
+  const lineupEligible = isLineupEligible(selected);
   const togglePlayer = (id: PlayerId) => {
     setSelectedSlots((current) => {
       const existingIndex = current.indexOf(id);
@@ -155,6 +165,13 @@ export function RosterLab() {
       return current.map((playerId, index) =>
         index === openIndex ? id : playerId,
       );
+    });
+  };
+  const moveSlot = (fromIndex: number, toIndex: number) => {
+    setSelectedSlots((current) => {
+      const next = [...current];
+      [next[fromIndex], next[toIndex]] = [next[toIndex], next[fromIndex]];
+      return next;
     });
   };
 
@@ -210,14 +227,16 @@ export function RosterLab() {
           <section className="roster-pool" aria-label="Available skaters">
             <header>
               <span>SCOUTING POOL · NINE RECTANGLES</span>
-              <strong>{selected.length}/6 SELECTED</strong>
+              <strong>
+                {selected.length}/6 · {selectedCost}/{MATCH_LINEUP_BUDGET} PTS
+              </strong>
             </header>
             <div>
               {Object.keys(PLAYER_DEFINITIONS).map((id) => (
                 <RosterCard
                   key={id}
                   id={id}
-                  slotIndex={selected.indexOf(id)}
+                  slotIndex={selectedSlots.indexOf(id)}
                   onClick={() => togglePlayer(id)}
                 />
               ))}
@@ -225,17 +244,37 @@ export function RosterLab() {
           </section>
 
           <aside className="lineup-panel" aria-label="Selected lineup">
-            <span>LINE CONSTRUCTION</span>
+            <span>LINE CONSTRUCTION · SPECIALIST 2 / HYBRID 1</span>
             <ol>
               {SLOT_NAMES.map((slot, index) => {
                 const id = selectedSlots[index];
                 return (
                   <li key={slot} className={id ? "filled" : ""}>
-                    <small>{slot}</small>
-                    <strong>
-                      {id ? playerDefinition(id).shortName : "OPEN"}
-                    </strong>
-                    <em>{id ? playerRoleLabel(id) : "Choose a skater"}</em>
+                    <div>
+                      <small>{slot}</small>
+                      <strong>
+                        {id ? playerDefinition(id).shortName : "OPEN"}
+                      </strong>
+                      <em>{id ? playerRoleLabel(id) : "Choose a skater"}</em>
+                    </div>
+                    <nav aria-label={`${slot} slot controls`}>
+                      <button
+                        type="button"
+                        aria-label={`Move ${slot} up`}
+                        disabled={index === 0}
+                        onClick={() => moveSlot(index, index - 1)}
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Move ${slot} down`}
+                        disabled={index === SLOT_NAMES.length - 1}
+                        onClick={() => moveSlot(index, index + 1)}
+                      >
+                        ↓
+                      </button>
+                    </nav>
                   </li>
                 );
               })}
@@ -245,14 +284,18 @@ export function RosterLab() {
             </button>
             <button
               className="start-match"
-              disabled={selected.length !== 6}
+              disabled={!lineupEligible}
               onClick={() =>
                 setMatch(
                   createMatch(lineupFromSelection(selected), scoutReportId),
                 )
               }
             >
-              START THREE SHIFTS
+              {selected.length !== 6
+                ? "CHOOSE SIX SKATERS"
+                : selectedCost > MATCH_LINEUP_BUDGET
+                  ? `OVER BUDGET · ${selectedCost}/${MATCH_LINEUP_BUDGET}`
+                  : "START THREE SHIFTS"}
             </button>
           </aside>
 

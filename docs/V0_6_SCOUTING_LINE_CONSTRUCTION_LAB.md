@@ -13,6 +13,9 @@ equipment layer, draft, progression track, timer, or Momentum target.
 
 - Show all three upcoming formations before lineup selection.
 - Choose six ordered skaters from nine rectangle players.
+- Fit those six under a 10-point lineup budget: specialists cost two and
+  hybrids cost one. The unchanged six-specialist line costs 12, so every match
+  requires two role-compression choices.
 - The first three selections fill Recover, Create, and Finish; the remaining
   three form the bench.
 - Three fixed scout reports provide different known formation sequences.
@@ -53,7 +56,7 @@ score or Momentum target.
 
 ## Pass/fail observations
 
-- Does the scout report cause players to remove at least one default specialist?
+- Does the scout report change which two default specialists players compress?
 - Can they explain why Flare, Hatch, a second Carrier, or a crease-heavy group
   belongs against the shown sequence?
 - Do they notice the hybrid's saved roster/action step and its weaker board
@@ -64,3 +67,8 @@ score or Momentum target.
 Pause before expanding the player pool if the default six solve every report,
 hybrids dominate specialists, or the pre-match choice is not remembered during
 the shift.
+
+The budget exists only in the three-shift roster lab. It does not alter the
+framework-agnostic shift engine, and it should be removed if testing shows that
+players merely select the same hybrid pair every match instead of responding to the
+scout report.

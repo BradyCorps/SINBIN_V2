@@ -100,3 +100,13 @@ specialists. Flare can finish a five-of-six opening; Spark requires the complete
 non-elite route. Hybrid defensive reads delay rather than immediately stop the
 counter. No drafting, progression, equipment rules, randomness, Momentum target,
 timing mode, or final UI is added.
+
+## 2026-08-28 — Require two compression choices in V0.6 line construction
+
+The original nine-player pool allowed the six full-strength specialists to cover
+every offensive and defensive role, leaving hybrids strictly inferior. The
+three-shift match now uses a 10-point lineup budget: specialists cost two,
+hybrids cost one, and six skaters must fit under the cap. This is a roster-lab
+constraint only; the deterministic shift engine and its role effects are
+unchanged. It forces two visible compression trade-offs while scout reports point
+at different paired-role demands.

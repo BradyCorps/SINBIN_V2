@@ -18,6 +18,8 @@ system labels.
 
 - A scout report shows the exact three-formation sequence before play.
 - Six ordered skaters are selected from a nine-player rectangle pool.
+- Specialists cost two lineup points and hybrids cost one. The 10-point match
+  budget requires two hybrid compression choices among six selected skaters.
 - Recover, Create, and Finish start active; three more skaters form the bench.
 - A match is exactly three shifts. Goals and goals against are recorded; a
   breakdown changes neither score.

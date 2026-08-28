@@ -91,6 +91,27 @@ test("a specialist can be replaced by a hybrid in the same lineup slot", async (
   await expect(page.locator(".roster-card--selected")).toHaveCount(6);
 });
 
+test("the lineup budget blocks six specialists and slots can move directly", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.goto("/");
+
+  await page.getByRole("button", { name: /Relay Okafor/ }).click();
+  await page.getByRole("button", { name: /Lane Sato/ }).click();
+  await expect(page.getByText("6/6 · 11/10 PTS")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /over budget/i }),
+  ).toBeDisabled();
+
+  const lineup = page.getByLabel("Selected lineup");
+  await expect(lineup.locator("li").nth(1)).toContainText("Lane");
+  await expect(lineup.locator("li").nth(2)).toContainText("Flare");
+  await page.getByRole("button", { name: "Move Finish up" }).click();
+  await expect(lineup.locator("li").nth(1)).toContainText("Flare");
+  await expect(lineup.locator("li").nth(2)).toContainText("Lane");
+});
+
 test("the selected six enter a locked known formation and can score", async ({
   page,
 }) => {
